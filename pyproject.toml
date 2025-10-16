@@ -1,0 +1,6 @@
+[tool.uv.workspace]
+members = ["packages/kubesdk", "packages/kubesdk_cli"]
+
+[tool.uv.sources]
+kubesdk = { workspace = true }
+kubesdk-cli = { workspace = true }

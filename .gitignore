@@ -1,0 +1,22 @@
+# --- PyCharm / IntelliJ ---
+.idea/
+*.iml
+
+# --- Python build/cache ---
+__pycache__/
+*.py[cod]
+*.pyo
+
+# --- Virtual envs ---
+.venv/
+venv/
+
+# --- Packaging / build outputs ---
+build/
+dist/
+*.egg-info/
+
+# --- Test / tooling caches ---
+.pytest_cache/
+.mypy_cache/
+.coverage*

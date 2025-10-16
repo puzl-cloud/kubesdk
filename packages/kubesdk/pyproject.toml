@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kubesdk"
+version = "0.0.0"
+description = "Fast, fully typed Kubernetes client."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "nik@puzl.cloud" }]
+
+dependencies = [
+    "aiohttp==3.12.15"
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kubesdk"]
+
+[project.optional-dependencies]
+cli = ["kubesdk-cli"]
