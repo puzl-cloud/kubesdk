@@ -1,14 +1,17 @@
+import sys
 from typing import ClassVar, Optional, Set, List
-from functools import cached_property
+from importlib import import_module
 from dataclasses import dataclass, field
-from enum import StrEnum
+from typing import Type, TypeVar, Generic
 
 from .loader import loader, LazyLoadModel
 from .const import *
 
 # ToDo: We have a hard code of ObjectMeta's version here.
 #  We should dynamically build this import depending on future k8s meta versions.
-from k8s_models.api_v1.io.k8s.apimachinery.pkg.apis.meta import ObjectMeta, ListMeta
+meta_module = import_module(".api_v1.io.k8s.apimachinery.pkg.apis.meta", package=__package__)
+ObjectMeta: Type = getattr(meta_module, "ObjectMeta")
+ListMeta: Type = getattr(meta_module, "ListMeta")
 
 
 @loader
@@ -27,10 +30,22 @@ class K8sResource(LazyLoadModel):
     is_namespaced_: ClassVar[bool]
 
 
-@loader
-@dataclass(kw_only=True, frozen=True)
-class K8sResourceList[ResourceT: K8sResource](K8sResource):
-    items: List[ResourceT]
-    apiVersion: str = 'v1'
-    kind: str = f'{ResourceT.__class__.__name__}List'
-    metadata: ListMeta = field(default_factory=ListMeta)
+if sys.version_info >= (3, 13):
+    @loader
+    @dataclass(kw_only=True, frozen=True)
+    class K8sResourceList[ResourceT: K8sResource](K8sResource):
+        items: List[ResourceT]
+        apiVersion: str = 'v1'
+        kind: str = f'{ResourceT.__class__.__name__}List'
+        metadata: ListMeta = field(default_factory=ListMeta)
+
+else:
+    ResourceT = TypeVar("ResourceT", bound=K8sResource)
+
+
+    @loader
+    @dataclass(kw_only=True, frozen=True)
+    class K8sResourceList(Generic[ResourceT], K8sResource):
+        items: list[ResourceT]
+        apiVersion: str = 'v1'
+        metadata: ListMeta = field(default_factory=ListMeta)
