@@ -14,7 +14,7 @@ SCALAR_TYPES = [str, int, float, bool, complex, bytes, bytearray, Literal]
 
 
 class PatchRequestType(StrEnum):
-    # json_plain = 'application/json'
+    _legacy_json = "application/json"  # Swagger schema legacy
     cbor = "application/apply-patch+cbor"
     apply = 'application/apply-patch+yaml'
     json = 'application/json-patch+json'

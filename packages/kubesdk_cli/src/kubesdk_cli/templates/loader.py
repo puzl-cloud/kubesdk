@@ -10,10 +10,6 @@ from types import UnionType
 
 from .const import *
 
-# Import module entrypoint to resolve the types with full module name correctly
-# ToDo: Fix this hard coded import, must be dynamic depending on what module name was used in a codegen
-import k8s_models
-
 _CACHED_TYPES = {}
 
 _LOAD_TYPES_ON_INIT = "__should_load"
@@ -240,6 +236,16 @@ def _evaluate_value(field_type: Any, field_value: Any, use_lazy: bool = False) -
             # If we have complex type still, decompose it further
             if "[" in str(real_type):
                 return _evaluate_value(real_type, field_value, use_lazy)
+
+            if isinstance(real_type, type):
+                try:
+                    injected_kw = _inject_lazy_load(real_type, field_value, use_lazy)
+                    res = real_type(**injected_kw)
+                    _CACHED_TYPES[passed_field_type] = real_type
+                    return res
+                except (SyntaxError, NameError, TypeError):
+                    pass
+
             try:
                 real_type_origin = get_origin(real_type)
                 if any(real_type_origin is scalar for scalar in SCALAR_TYPES):
@@ -461,7 +467,7 @@ class LazyLoadModel:
             public_items.append((n, _to_immutable(getattr(self, n))))
         return hash(tuple(public_items))
 
-    def to_dict(self, with_types: bool = False) -> Dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         result = {}
         for f in fields(self):
             # Skip all private fields
@@ -478,26 +484,21 @@ class LazyLoadModel:
 
             # Recursively call to_dict if the field is a dataclass instance
             if is_dataclass(value):
-                value_type = value.__class__.__name__
-                value = value.to_dict(with_types)
-                if with_types:
-                    value["__type"] = value_type
+                value = value.to_dict()
             elif isinstance(value, list) and all(is_dataclass(item) for item in value):
-                value = [item.to_dict(with_types) for item in value]
+                value = [item.to_dict() for item in value]
             elif isinstance(value, dict):
                 new_value = {}
                 for k, v in value.items():
                     # Handle Dict[SomeFrozenDataClass, SomeType]
                     # We dump dataclass to json and encode it in base64 to get a valid json key, if that's the case
                     encoded_key = \
-                        b64encode(json.dumps(k.to_dict(with_types), separators=(",", ":")).encode()).decode() \
+                        b64encode(json.dumps(k.to_dict(), separators=(",", ":")).encode()).decode() \
                             if is_dataclass(k) \
                             else k
-                    encoded_val = v.to_dict(with_types) if is_dataclass(v) else v
+                    encoded_val = v.to_dict() if is_dataclass(v) else v
                     new_value[encoded_key] = encoded_val
                 value = new_value
 
             result[f.name] = value
-        if with_types:
-            result["__type"] = self.__class__.__name__
         return result
