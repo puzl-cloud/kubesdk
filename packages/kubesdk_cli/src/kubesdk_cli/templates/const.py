@@ -1,5 +1,10 @@
 from typing import Literal
-from enum import StrEnum
+try:
+    from enum import StrEnum  # Python 3.11+
+except ImportError:
+    from enum import Enum
+    class StrEnum(str, Enum):
+        pass
 
 
 # We do not add None to scalars because it makes no sense for our dynamic type loading.
@@ -9,6 +14,8 @@ SCALAR_TYPES = [str, int, float, bool, complex, bytes, bytearray, Literal]
 
 
 class PatchRequestType(StrEnum):
+    # json_plain = 'application/json'
+    cbor = "application/apply-patch+cbor"
     apply = 'application/apply-patch+yaml'
     json = 'application/json-patch+json'
     merge = 'application/merge-patch+json'

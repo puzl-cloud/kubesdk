@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import logging
 import os
 import sys
 from collections.abc import Iterator, Mapping, Sequence
@@ -35,7 +36,10 @@ from datamodel_code_generator import DataModelType, GraphQLScope, get_first_file
     get_version, chdir, MAX_VERSION, MIN_VERSION, InvalidClassNameError, is_openapi, is_schema
 from datamodel_code_generator.model.imports import IMPORT_CLASSVAR
 
-from templates.const import *
+from kubesdk_cli.templates.const import *
+
+
+class EmptyComponents(Exception): ...
 
 
 class InputFileType(Enum):
@@ -501,8 +505,8 @@ class OpenAPIK8sParser(OpenAPIParser):
                     path=[*path, "tags"],
                 )
         except Exception as e:
-            warn(f"Failed to parse some children of operation {method} {path_name}. Got exception: {e}. "
-                 f"Not an error for {self.__class__.__name__}, was passed.")
+            logging.info(f"Failed to parse some children of operation {method} {path_name}. Got exception: {e}. "
+                         f"Not an error for {self.__class__.__name__}, was passed.")
 
         self.operations.append(OperationMeta(op=operation, path=path_name, method=method))
 
@@ -554,11 +558,12 @@ class OpenAPIK8sParser(OpenAPIParser):
                 # Build supported K8sResource update strategies from PATCH queries
                 elif meta.method == "patch":
                     media_types = meta.op.requestBody.content.keys()
-                    try:
-                        [PatchRequestType(m) for m in media_types]
-                    except ValueError:
-                        warn(f"Got unknown media type for PATCH in model {model.class_name}: {media_types}. "
-                             f"You must update your PatchRequestType enum spec!")
+                    for m in media_types:
+                        try:
+                            PatchRequestType(m)
+                        except ValueError:
+                            logging.warning(f"Got unknown media type for PATCH in model {model.class_name}: {m}. "
+                                            f"You must update your PatchRequestType enum spec!")
 
                     patch_strategies = {media for media in media_types}
                     fields_to_add |= {"patch_strategies_": patch_strategies}
@@ -606,6 +611,8 @@ class OpenAPIK8sParser(OpenAPIParser):
 
     def parse_raw(self) -> None:
         super().parse_raw()
+        if not self.raw_obj.get("components") or "schemas" not in self.raw_obj.get("components") or {}:
+            raise EmptyComponents()
         if OpenAPIScope.Paths in self.open_api_scopes:
             self.add_k8s_path()
 

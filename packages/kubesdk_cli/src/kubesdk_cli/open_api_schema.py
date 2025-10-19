@@ -1,27 +1,7 @@
-#!/usr/bin/env python3
-"""
-download_openapi_v3.py
-
-Minimal utility: download an OpenAPI schema to a folder.
-
-- If the URL is a plain OpenAPI doc (JSON/YAML), save it once.
-- If the URL is an *index-style* v3 document that lists sub-schemas as:
-    {"paths": {"apis/apps/v1": {"serverRelativeURL": "/openapi/v3/apis/apps/v1?..."} , ...}}
-  then fetch **all** sub-schemas and save each to its own file.
-
-Output:
-  - One JSON file per schema under --out-dir (standardized JSON).
-  - A manifest file "openapi_v3_manifest.json" mapping labels -> filenames and source URLs.
-
-Usage:
-  python download_openapi_v3.py --url http://127.0.0.1:8001/openapi/v3 --out-dir ./schemas
-  python download_openapi_v3.py --url https://apiserver/openapi/v3 --out-dir ./schemas \
-    --http-header "Authorization: Bearer $TOKEN" --insecure-skip-tls-verify
-"""
-
 from __future__ import annotations
 
 import argparse
+import logging
 import concurrent.futures as cf
 import json
 import os
@@ -31,16 +11,6 @@ from typing import Any, Dict, List, Tuple
 from urllib.parse import urljoin, urlparse
 
 import requests
-
-
-def parse_headers(header_list: List[str]) -> Dict[str, str]:
-    headers: Dict[str, str] = {}
-    for raw in header_list:
-        k, sep, v = raw.partition(":")
-        if not sep:
-            raise SystemExit(f"Bad --http-header (use 'Name: value'): {raw!r}")
-        headers[k.strip()] = v.strip()
-    return headers
 
 
 def is_index_document(obj: Any) -> bool:
@@ -133,31 +103,14 @@ def download_open_api_schema(url: str, headers: Dict[str, str] = None, out_dir: 
 
     manifest: Dict[str, Dict[str, str]] = {}
     for label, src_url, obj in docs:
-
-        # Validating schema with pydantic just in case
-        # OpenAPI.parse_obj(obj)
-
         file_name = f"{safe_module_name(label)}.json"
         path = out_dir / file_name
         save_json(path, obj)
         manifest[label] = {"file": file_name, "source_url": src_url}
-        print(f"[ok] saved {label} -> {path}")
+        logging.info(f"[ok] saved {label} -> {path}")
 
     save_json(out_dir / "openapi_v3_manifest.json", manifest)
-    print(f"[done] wrote {len(docs)} document(s) and manifest to {out_dir}")
-
-
-def download_open_api_schema_cli() -> None:
-
-    ap = argparse.ArgumentParser(description="Download OpenAPI schema(s) to a folder.")
-    ap.add_argument("--url", required=True, help="OpenAPI URL (json/yaml or v3 index json)")
-    ap.add_argument("--out-dir", required=True, help="Directory to write files")
-    ap.add_argument("--timeout", type=float, default=120.0, help="HTTP timeout in seconds")
-    ap.add_argument("--http-header", action="extend", nargs="+", default=[],
-                    help="Extra headers: 'Name: value' (repeatable)")
-    ap.add_argument("--skip-tls", action="store_true", help="Disable TLS verification (NOT recommended)")
-    args = ap.parse_args()
-    download_open_api_schema(args.url, args.http_header, args.out_dir, args.timeout, args.skip_tls)
+    logging.info(f"[done] wrote {len(docs)} document(s) and manifest to {out_dir}")
 
 
 def fetch_open_api_manifest(url: str, http_headers: Dict[str, str] = None) -> Dict:
@@ -170,17 +123,9 @@ def fetch_open_api_manifest(url: str, http_headers: Dict[str, str] = None) -> Di
 
 def fetch_k8s_version(cluster_url: str, http_headers: Dict[str, str] = None) -> str:
     http_headers = http_headers or {}
-    manifest = fetch_open_api_manifest(cluster_url, token)
+    manifest = fetch_open_api_manifest(cluster_url, http_headers)
     version_path = manifest.get("paths", {}).get("version", {}).get('serverRelativeURL')
     r = requests.get(f"{cluster_url}{version_path}", headers=http_headers)
     r.raise_for_status()
     data = r.json()
     return data.get("version") or data.get("info", {}).get("version")
-
-
-if __name__ == "__main__":
-    url = os.getenv("KUBERNETES_HOST")
-    token = os.getenv("KUBERNETES_API_KEY")
-    assert url and token
-
-    download_open_api_schema(url, {"Authorization": f"Bearer {token}"}, "./schema")

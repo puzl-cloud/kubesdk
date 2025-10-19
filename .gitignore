@@ -1,6 +1,7 @@
 # --- PyCharm / IntelliJ ---
 .idea/
 *.iml
+*.run
 
 # --- Python build/cache ---
 __pycache__/

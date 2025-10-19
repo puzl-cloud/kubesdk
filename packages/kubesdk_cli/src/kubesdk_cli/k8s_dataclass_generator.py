@@ -1,7 +1,10 @@
 from __future__ import annotations
 import functools
+import sys
+import logging
 import asyncio
 import ast
+import json
 from pathlib import Path
 import shutil
 from typing import Dict, List, Tuple, Set
@@ -10,9 +13,12 @@ from urllib.parse import urlparse
 from datamodel_code_generator import DataModelType, PythonVersion, LiteralType, OpenAPIScope
 
 # Our own extended parser
-from k8s_parser import generate, InputFileType
+from kubesdk_cli.k8s_schema_parser import generate, InputFileType, EmptyComponents
 
-from download_open_api_schema import safe_module_name, fetch_open_api_manifest, fetch_k8s_version
+from kubesdk_cli.open_api_schema import safe_module_name, fetch_open_api_manifest, fetch_k8s_version
+
+
+logging.basicConfig(level=logging.DEBUG, force=True, handlers=[logging.StreamHandler(sys.stdout)])
 
 
 def _parse_exports_and_dataclasses(py_path: Path) -> Tuple[Set[str], Set[str]]:
@@ -85,13 +91,13 @@ def write_inits_with_type_loader(base_dir: str | Path, extra_globals: List[str] 
       • star-import subpackages (they do the same recursively)
       • emit __all__ with only exported names
     """
-    print(f"Writing __init__ for each submodule...")
+    logging.info(f"Writing __init__ for each submodule...")
 
     import os  # local import to keep function self-contained
     base = Path(base_dir).resolve()
 
     extra_globals = extra_globals or []
-    loader_import: str = "from k8s_models.loader import loader as __loader"
+    loader_import: str = f"from {base.name}.loader import loader as __loader"
 
     for root, dirs, files in os.walk(base):
         pkg_dir = Path(root)
@@ -99,7 +105,7 @@ def write_inits_with_type_loader(base_dir: str | Path, extra_globals: List[str] 
         if not init_path.exists():
             continue
 
-        print(f"Writing {init_path}...")
+        logging.info(f"Writing {init_path}")
 
         # Child modules and subpackages
         module_paths = sorted(
@@ -197,13 +203,13 @@ def copy_file(src: Path, dst_dir: Path, new_name: str = None) -> Path:
 
 
 async def generate_for_schema(
-        output: Path, python_version: PythonVersion, module_name: str, templates: Path,
-        from_dir: Path = None, url: str = None, http_headers: Dict[str, str] = None):
+        output: Path, python_version: PythonVersion, module_name: str, templates: Path, module_root: str,
+        from_file: Path = None, url: str = None, http_headers: Dict[str, str] = None):
     try:
-        assert from_dir or url, "You must pass from_dir path or OpenAPI schema url"
+        assert from_file or url, "You must pass from_file path or OpenAPI schema url"
         await asyncio.to_thread(functools.partial(
             generate,
-            input_=urlparse(url) if url else from_dir,
+            input_=urlparse(url) if url else from_file,
             input_file_type=InputFileType.OpenAPIK8s,
             openapi_scopes=[OpenAPIScope.Paths, OpenAPIScope.Schemas],
             output=output,
@@ -224,11 +230,11 @@ async def generate_for_schema(
                 "datetime.datetime",
                 "datetime.timezone",
                 "typing.Set",
-                "k8s_models.const.*",
-                "k8s_models.resource.*",
-                "k8s_models.loader.*"
+                f"{module_root}.const.*",
+                f"{module_root}.resource.*",
+                f"{module_root}.loader.*"
             ],
-            base_class="k8s_models.loader.LazyLoadModel",
+            base_class=f"{module_root}.loader.LazyLoadModel",
             enum_field_as_literal=LiteralType.All,
             use_exact_imports=True,
             treat_dot_as_module=True,
@@ -241,14 +247,17 @@ async def generate_for_schema(
             reuse_model=False,
             use_union_operator=True
         ))
-        print(f"[ok]   {module_name} -> {output}")
+        logging.info(f"[ok]   {module_name} -> {output}")
+
+    except EmptyComponents:
+        logging.info(f"[skip] {module_name}: OpenAPI schema does not contain any components")
     except Exception as e:
-        print(f"[skip] {module_name}: {e}")
+        logging.warning(f"[skip] {module_name}: {e}")
         raise
 
 
 async def generate_dataclasses_from_url(
-        cluster_url: str, output: Path, templates: Path, python_version: PythonVersion = PythonVersion.PY_39,
+        cluster_url: str, output: Path, templates: Path, python_version: PythonVersion = PythonVersion.PY_310,
         http_headers: Dict[str, str] = None) -> None:
     """
     Iterate a downloader manifest (label -> {file, source_url}) and run codegen per URL.
@@ -256,7 +265,7 @@ async def generate_dataclasses_from_url(
     """
 
     # Get OpenAPI v3 manifest
-    print(f"Generating dataclasses from Kubernetes cluster {cluster_url}")
+    logging.info(f"Generating dataclasses from Kubernetes cluster {cluster_url}")
 
     cluster_url = cluster_url.strip("/")
     manifest = fetch_open_api_manifest(cluster_url, http_headers)
@@ -264,32 +273,70 @@ async def generate_dataclasses_from_url(
     tasks = []
     for label, meta in sorted(manifest["paths"].items()):
         url = f"{cluster_url}{meta.get('serverRelativeURL')}"
-        if not url:
-            continue
         subdir = output / safe_module_name(label)
         subdir.mkdir(parents=True, exist_ok=True)
         (subdir / "__init__.py").touch(exist_ok=True)
         tasks.append(
-            generate_for_schema(subdir.resolve(), python_version, label, templates, url=url, http_headers=http_headers))
+            generate_for_schema(subdir.resolve(), python_version, label, templates, module_root=output.name,
+                                url=url, http_headers=http_headers))
 
     await asyncio.gather(*tasks, return_exceptions=True)
 
     # Write Kubernetes API version finally
     version_file = "version.txt"
-    print(f"Writing Kubernetes version into {version_file} ...")
+    logging.info(f"Writing Kubernetes version into {version_file} ...")
     k8s_version = fetch_k8s_version(cluster_url, http_headers)
     (output / version_file).write_text(f"{k8s_version}\n", encoding="utf-8")
-    
+
+
+def read_all_json_files(from_dir: Path | str, recursive: bool = True) -> Dict[str, Dict]:
+    pattern = "**/*.json" if recursive else "*.json"
+    return {f.name: json.loads(f.read_text(encoding="utf-8")) for f in Path(from_dir).glob(pattern) if f.is_file()}
+
     
 async def generate_dataclasses_from_dir(
-        from_dir: Path, output: Path, templates: Path, python_version: PythonVersion = PythonVersion.PY_39) -> None:
-    # ToDo [ASAP]: Finish it
-    pass
+        from_dir: Path, output: Path, templates: Path, python_version: PythonVersion = PythonVersion.PY_310) -> None:
+    """
+    Iterate a downloader manifest (label -> {file, source_url}) and run codegen per URL.
+    Each label gets its own subpackage under output dir.
+    """
+    logging.info(f"Generating dataclasses from OpenAPI schema {from_dir}")
+    try:
+        all_schemas = read_all_json_files(from_dir)
+        if not all_schemas:
+            raise FileNotFoundError(f"No OpenAPI schemas found in {from_dir}")
+
+        tasks = []
+        for api_schema_file, meta in all_schemas.items():
+            try:
+                schema_root = min(meta.get("paths"))  # first path of the schema
+            except Exception:
+                logging.error(f"[skip] {from_dir / api_schema_file} is not a valid OpenAPI schema: unable to read paths")
+                continue
+
+            subdir = output / safe_module_name(schema_root)
+            subdir.mkdir(parents=True, exist_ok=True)
+            (subdir / "__init__.py").touch(exist_ok=True)
+            tasks.append(
+                generate_for_schema(subdir.resolve(), python_version, schema_root, templates, module_root=output.name,
+                                    from_file=from_dir / api_schema_file))
+
+        await asyncio.gather(*tasks, return_exceptions=True)
+    except Exception as e:
+        raise
+
+    print("FUCK YEAH")
+
+    # Write Kubernetes API version finally
+    # version_file = "version.txt"
+    # logging.info(f"Writing Kubernetes version into {version_file} ...")
+    # k8s_version = fetch_k8s_version(cluster_url, http_headers)
+    # (output / version_file).write_text(f"{k8s_version}\n", encoding="utf-8")
 
 
-def prepare_module(module_path: Path, templates: Path, output: Path, extra_globals: List[str] = None):
+def prepare_module(module_path: Path, templates: Path, extra_globals: List[str] = None):
     extra_globals = extra_globals or []
-    output.mkdir(parents=True, exist_ok=True)
+    module_path.mkdir(parents=True, exist_ok=True)
     copy_file(templates / "init.py", module_path, "__init__.py")
     for file in extra_globals:
         copy_file(templates / file, module_path)

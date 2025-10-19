@@ -1,5 +1,5 @@
 [tool.uv.workspace]
-members = ["packages/kubesdk", "packages/kubesdk_cli"]
+members = ["packages/*"]
 
 [tool.uv.sources]
 kubesdk = { workspace = true }
