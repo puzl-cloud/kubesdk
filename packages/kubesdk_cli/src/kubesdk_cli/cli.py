@@ -49,10 +49,7 @@ def cli() -> None:
         asyncio.run(generate_dataclasses_from_url(
             args.url, output=models_path, templates=templates_path, http_headers=headers))
     else:
-        try:
-            asyncio.run(generate_dataclasses_from_dir(from_dir, output=models_path, templates=templates_path))
-        except Exception as e:
-            raise
+        asyncio.run(generate_dataclasses_from_dir(from_dir, output=models_path, templates=templates_path))
     write_inits_with_type_loader(models_path, extra_globals)
 
 

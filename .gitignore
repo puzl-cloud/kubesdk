@@ -1,23 +1,26 @@
-# --- PyCharm / IntelliJ ---
+# PyCharm / IntelliJ 
 .idea/
 *.iml
 *.run
 
-# --- Python build/cache ---
+# Python build/cache 
 __pycache__/
 *.py[cod]
 *.pyo
 
-# --- Virtual envs ---
+# Virtual envs 
 .venv/
 venv/
 
-# --- Packaging / build outputs ---
+# Packaging / build outputs 
 build/
 dist/
 *.egg-info/
 
-# --- Test / tooling caches ---
+# Test / tooling caches 
 .pytest_cache/
 .mypy_cache/
 .coverage*
+
+# Avoid loading any local files just in case
+*.json
