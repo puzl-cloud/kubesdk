@@ -301,32 +301,28 @@ async def generate_dataclasses_from_dir(
     Each label gets its own subpackage under output dir.
     """
     logging.info(f"Generating dataclasses from OpenAPI schema {from_dir}")
-    try:
-        all_schemas = read_all_json_files(from_dir)
-        if not all_schemas:
-            raise FileNotFoundError(f"No OpenAPI schemas found in {from_dir}")
+    all_schemas = read_all_json_files(from_dir)
+    if not all_schemas:
+        raise FileNotFoundError(f"No OpenAPI schemas found in {from_dir}")
 
-        tasks = []
-        for api_schema_file, meta in all_schemas.items():
-            try:
-                schema_root = min(meta.get("paths"))  # first path of the schema
-            except Exception:
-                logging.error(f"[skip] {from_dir / api_schema_file} is not a valid OpenAPI schema: unable to read paths")
-                continue
+    tasks = []
+    for api_schema_file, meta in all_schemas.items():
+        try:
+            schema_root = min(meta.get("paths"))  # first path of the schema
+        except Exception:
+            logging.error(f"[skip] {from_dir / api_schema_file} is not a valid OpenAPI schema: unable to read paths")
+            continue
 
-            subdir = output / safe_module_name(schema_root)
-            subdir.mkdir(parents=True, exist_ok=True)
-            (subdir / "__init__.py").touch(exist_ok=True)
-            tasks.append(
-                generate_for_schema(subdir.resolve(), python_version, schema_root, templates, module_root=output.name,
-                                    from_file=from_dir / api_schema_file))
+        subdir = output / safe_module_name(schema_root)
+        subdir.mkdir(parents=True, exist_ok=True)
+        (subdir / "__init__.py").touch(exist_ok=True)
+        tasks.append(
+            generate_for_schema(subdir.resolve(), python_version, schema_root, templates, module_root=output.name,
+                                from_file=from_dir / api_schema_file))
 
-        await asyncio.gather(*tasks, return_exceptions=True)
-    except Exception as e:
-        raise
+    await asyncio.gather(*tasks, return_exceptions=True)
 
-    print("FUCK YEAH")
-
+    # ToDo: Finish loading k8s version!
     # Write Kubernetes API version finally
     # version_file = "version.txt"
     # logging.info(f"Writing Kubernetes version into {version_file} ...")
