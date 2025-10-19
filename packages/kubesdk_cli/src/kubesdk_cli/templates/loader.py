@@ -8,7 +8,11 @@ from dataclasses import is_dataclass, fields, field, dataclass, Field
 from typing import *
 from types import UnionType
 
+if sys.version_info < (3, 11):
+    from typing_extensions import Self
+
 from .const import *
+
 
 _CACHED_TYPES = {}
 
