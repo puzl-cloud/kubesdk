@@ -21,7 +21,7 @@ ListMeta: Type = getattr(meta_module, "ListMeta")
 class K8sResource(LazyLoadModel):
     apiVersion: str
     kind: str
-    metadata: ObjectMeta
+    metadata: ObjectMeta  # type: ignore
 
     api_path_: ClassVar[str]
     plural_: ClassVar[str]
@@ -39,16 +39,14 @@ if sys.version_info >= (3, 13):
         items: List[ResourceT]
         apiVersion: str = 'v1'
         kind: str = f'{ResourceT.__class__.__name__}List'
-        # noinspection TypeVar
-        metadata: ListMeta = field(default_factory=ListMeta)
+        metadata: ListMeta = field(default_factory=ListMeta)  # type: ignore
 
 else:
     ResourceT = TypeVar("ResourceT", bound=K8sResource)
-
 
     @loader
     @dataclass(kw_only=True, frozen=True)
     class K8sResourceList(Generic[ResourceT], K8sResource):
         items: list[ResourceT]
         apiVersion: str = 'v1'
-        metadata: ListMeta = field(default_factory=ListMeta)
+        metadata: ListMeta = field(default_factory=ListMeta)  # type: ignore
