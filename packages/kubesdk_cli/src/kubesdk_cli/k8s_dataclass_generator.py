@@ -7,6 +7,7 @@ import ast
 import json
 from pathlib import Path
 import shutil
+from datetime import datetime, timezone
 from typing import Dict, List, Tuple, Set
 from urllib.parse import urlparse
 
@@ -14,8 +15,8 @@ from datamodel_code_generator import DataModelType, PythonVersion, LiteralType, 
 
 # Our own extended parser
 from kubesdk_cli.k8s_schema_parser import generate, InputFileType, EmptyComponents
-
 from kubesdk_cli.open_api_schema import safe_module_name, fetch_open_api_manifest, fetch_k8s_version
+from kubesdk_cli.const import *
 
 
 logging.basicConfig(level=logging.DEBUG, force=True, handlers=[logging.StreamHandler(sys.stdout)])
@@ -162,16 +163,18 @@ def write_inits_with_type_loader(base_dir: str | Path, extra_globals: List[str] 
         subpkg_block = "\n".join(subpkg_lines).rstrip()
 
         # Build final content
-        content = (
-            "# auto-generated: explicit re-exports; wrap dataclasses via loader()\n"
-            "# flake8: noqa\n"
-            f"{loader_import}\n\n"
-            f"{imports_block}\n\n"
-            f"{wrap_exported_block}\n\n"
-            f"{all_line}\n\n" if all_line else ""
-            f"{wrap_internal_block}\n\n"
-            f"{subpkg_block}\n"
-        )
+        double_line = "\n\n"
+        timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        content = f"""\
+# {GENERATED_BY}
+#   timestamp: {timestamp}\n
+{loader_import}\n
+{imports_block}\n\n
+{wrap_exported_block}\n
+{all_line + double_line if all_line else ""}\
+{wrap_internal_block + double_line if wrap_exported_block else ""}\
+{subpkg_block}\
+"""
         (pkg_dir / "__init__.py").write_text(content, encoding="utf-8")
 
 

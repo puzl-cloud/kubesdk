@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import sys
 import logging
 from datetime import datetime
@@ -494,14 +495,7 @@ class LazyLoadModel:
             elif isinstance(value, dict):
                 new_value = {}
                 for k, v in value.items():
-                    # Handle Dict[SomeFrozenDataClass, SomeType]
-                    # We dump dataclass to json and encode it in base64 to get a valid json key, if that's the case
-                    encoded_key = \
-                        b64encode(json.dumps(k.to_dict(), separators=(",", ":")).encode()).decode() \
-                            if is_dataclass(k) \
-                            else k
-                    encoded_val = v.to_dict() if is_dataclass(v) else v
-                    new_value[encoded_key] = encoded_val
+                    new_value[k] = v.to_dict() if is_dataclass(v) else v
                 value = new_value
 
             result[f.name] = value
