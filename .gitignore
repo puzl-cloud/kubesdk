@@ -24,3 +24,4 @@ dist/
 
 # Avoid loading any local files just in case
 *.json
+kube_models

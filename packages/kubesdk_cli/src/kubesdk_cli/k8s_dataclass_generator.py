@@ -165,9 +165,7 @@ def write_inits_with_type_loader(base_dir: str | Path, extra_globals: List[str] 
         # Build final content
         double_line = "\n\n"
         timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-        content = f"""\
-# {GENERATED_BY}
-#   timestamp: {timestamp}\n
+        content = f"""{GENERATED_HEADER}\
 {loader_import}\n
 {imports_block}\n\n
 {wrap_exported_block}\n
@@ -175,7 +173,43 @@ def write_inits_with_type_loader(base_dir: str | Path, extra_globals: List[str] 
 {wrap_internal_block + double_line if wrap_exported_block else ""}\
 {subpkg_block}\
 """
-        (pkg_dir / "__init__.py").write_text(content, encoding="utf-8")
+        init_path.write_text(content, encoding="utf-8")
+
+
+def write_base_resource_py(base_dir: str | Path, meta_version: str):
+    base = Path(base_dir).resolve()
+    resource_py_path = base / "_k8s_resource_base.py"
+    logging.info(f"Writing base resource models at {resource_py_path}")
+    module_name = base.name
+
+    content = f"""{GENERATED_HEADER}\
+import sys
+from typing import ClassVar, Optional, Set, List
+from dataclasses import dataclass, field
+from typing import TypeVar, Generic
+
+from .loader import loader, LazyLoadModel
+from .const import *
+
+from {module_name}.api_{meta_version}.io.k8s.apimachinery.pkg.apis.meta import ObjectMeta, ListMeta
+
+
+@loader
+@dataclass(kw_only=True, frozen=True)
+class K8sResource(LazyLoadModel):
+    apiVersion: str
+    kind: str
+    metadata: ObjectMeta
+
+    api_path_: ClassVar[str]
+    plural_: ClassVar[str]
+    group_: ClassVar[Optional[str]]
+    kind_: ClassVar[str]
+    apiVersion_: ClassVar[str]
+    patch_strategies_: ClassVar[Set[PatchRequestType]]
+    is_namespaced_: ClassVar[bool]
+"""
+    resource_py_path.write_text(content, encoding="utf-8")
 
 
 def is_openapi_v3_with_models(root: object) -> bool:
@@ -336,6 +370,9 @@ async def generate_dataclasses_from_dir(
 def prepare_module(module_path: Path, templates: Path, extra_globals: List[str] = None):
     extra_globals = extra_globals or []
     module_path.mkdir(parents=True, exist_ok=True)
-    copy_file(templates / "init.py", module_path, "__init__.py")
     for file in extra_globals:
         copy_file(templates / file, module_path)
+
+
+def finalize_module_init(module_path: Path, templates: Path):
+    copy_file(templates / "init.py", module_path, "__init__.py")

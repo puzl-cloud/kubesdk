@@ -6,7 +6,7 @@ from typing import Dict, List
 from pathlib import Path
 
 from kubesdk_cli.k8s_dataclass_generator import prepare_module, generate_dataclasses_from_url, \
-    write_inits_with_type_loader, generate_dataclasses_from_dir
+    write_inits_with_type_loader, generate_dataclasses_from_dir, write_base_resource_py, finalize_module_init
 
 
 def parse_headers(header_list: List[str]) -> Dict[str, str]:
@@ -41,8 +41,10 @@ def cli() -> None:
     templates_path = Path(__file__).resolve().parent / "templates"
     extra_globals = [
         "loader.py",
-        "resource.py",
-        "const.py"
+        "const.py",
+        "_resource_list_generics.py",
+        "_resource_list_pep695.py",
+        "resource.py"
     ]
     prepare_module(models_path, templates_path, extra_globals)
     if args.url:
@@ -51,6 +53,8 @@ def cli() -> None:
     else:
         asyncio.run(generate_dataclasses_from_dir(from_dir, output=models_path, templates=templates_path))
     write_inits_with_type_loader(models_path, extra_globals)
+    write_base_resource_py(models_path, meta_version="v1")
+    finalize_module_init(models_path, templates_path)
 
 
 if __name__ == "__main__":
