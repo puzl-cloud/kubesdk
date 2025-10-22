@@ -1,0 +1,27 @@
+name: "Release"
+
+on:
+  push:
+    branches:
+      - release
+
+jobs:
+  run:
+    runs-on: puzl-ubuntu-latest
+    environment:
+      name: pypi
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      UV_SYSTEM_PYTHON: 1
+      UV_CACHE_DIR: /tmp/.uv-cache
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup UV
+        uses: ./.github/actions/setup-uv
+      - name: Build
+        run: uv build --all-packages
+      - name: Publish
+        run: uv publish
