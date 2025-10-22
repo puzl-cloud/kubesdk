@@ -26,5 +26,5 @@ dist/
 *.json
 
 .devcontainer/
-kube-models/
 k8s_openapi_spec/
+kube_models/

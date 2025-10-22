@@ -12,7 +12,8 @@ license = { text = "MIT" }
 authors = [{ name = "nik@puzl.cloud" }]
 
 dependencies = [
-    "aiohttp==3.12.15"
+    "aiohttp==3.12.15",
+    "kube-models==0.0.*"
 ]
 
 [tool.hatch.build.targets.wheel]

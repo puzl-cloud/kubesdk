@@ -389,9 +389,7 @@ def generate(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
     if custom_file_header is None and custom_file_header_path:
         custom_file_header = custom_file_header_path.read_text(encoding=encoding)
 
-    header = f"""\
-# {GENERATED_BY}
-#   filename:  {{}}"""
+    header = f"""{GENERATED_HEADER}\n#   filename:  {{}}"""
     if not disable_timestamp:
         header += f"\n#   timestamp: {timestamp}"
     if enable_version_header:
