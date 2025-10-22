@@ -15,7 +15,6 @@ jobs:
       contents: read
     env:
       UV_SYSTEM_PYTHON: 1
-      UV_CACHE_DIR: /tmp/.uv-cache
     steps:
       - name: Checkout
         uses: actions/checkout@v5

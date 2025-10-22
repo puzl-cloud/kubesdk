@@ -15,15 +15,16 @@ jobs:
     runs-on: puzl-ubuntu-latest
     env:
       UV_SYSTEM_PYTHON: 1
-      UV_CACHE_DIR: /tmp/.uv-cache
       MAX_PARALLEL_DOWNLOAD: 10
     steps:
       - uses: actions/checkout@v5
       - name: Setup UV
         uses: ./.github/actions/setup-uv
-      - name: generate data models
+      - name: Generate data models
         run: bash kube_models_generator.sh
-      - name: run model test
+      - name: Build
+        run: uv build --all-packages
+      - name: Model test
         run: uv run --isolated --no-project --with dist/kubesdk-*.whl packages/kubesdk/test/test_models.py
       - name: Check if publishable (dry-run)
         run: uv publish --dry-run

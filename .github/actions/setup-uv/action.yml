@@ -5,7 +5,9 @@ runs:
   using: composite
   steps:
     - name: Install uv
-      uses: astral-sh/setup-uv@v6
+      uses: astral-sh/setup-uv@v7
+      with:
+        cache-local-path: "/tmp/.uv-cache"
     
     - name: uv cache
       uses: puzl-cloud/github-actions-cache@v4
