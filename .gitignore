@@ -24,3 +24,7 @@ dist/
 
 # Avoid loading any local files just in case
 *.json
+
+.devcontainer/
+kube-models/
+k8s_openapi_spec/
