@@ -3,20 +3,13 @@ requires = ["hatchling>=1.24"]
 build-backend = "hatchling.build"
 
 [project]
-name = "kubesdk-cli"
+name = "kube-models"
 version = "0.0.0"
 requires-python = ">=3.10"
-description = "Kubernetes API models and CRD generator"
+description = "Python dataclasses for all Kubernetes built-in resources (v1.23+)"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Nik Paushkin", email = "nik@puzl.cloud" }]
 
-dependencies = [
-    "datamodel-code-generator[http]==0.33.0",
-    "pydantic>=2.4,<3",
-    "jinja2>=3.1",
-    "requests==2.32.5"
-]
-
 [tool.hatch.build.targets.wheel]
-packages = ["src/kubesdk_cli"]
+packages = ["src/kube_models"]

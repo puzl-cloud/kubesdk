@@ -30,6 +30,8 @@ def cli() -> None:
     ap.add_argument("--http-headers", action="extend", nargs="+", default=[],
                     help="Extra headers to use with --url: 'Authorization: Bearer some-token' (repeatable)")
     ap.add_argument("--skip-tls", action="store_true", help="Disable TLS verification to use with --url")
+    ap.add_argument("--module-name", default="kube_models",
+                    help="Name of the generated module (will be used for all imports)")
     args = ap.parse_args()
 
     assert args.url or args.from_dir, \
@@ -37,6 +39,7 @@ def cli() -> None:
 
     headers = parse_headers(args.http_headers) if args.http_headers else {}
     from_dir = Path(args.from_dir).resolve() if args.from_dir else None
+    module_name = args.module_name
     models_path = Path(args.output).resolve()
     templates_path = Path(__file__).resolve().parent / "templates"
     extra_globals = [
@@ -49,9 +52,10 @@ def cli() -> None:
     prepare_module(models_path, templates_path, extra_globals)
     if args.url:
         asyncio.run(generate_dataclasses_from_url(
-            args.url, output=models_path, templates=templates_path, http_headers=headers))
+            args.url, module_name=module_name, output=models_path, templates=templates_path, http_headers=headers))
     else:
-        asyncio.run(generate_dataclasses_from_dir(from_dir, output=models_path, templates=templates_path))
+        asyncio.run(generate_dataclasses_from_dir(
+            from_dir, module_name=module_name, output=models_path, templates=templates_path))
     write_inits_with_type_loader(models_path, extra_globals)
     write_base_resource_py(models_path, meta_version="v1")
     finalize_module_init(models_path, templates_path)
