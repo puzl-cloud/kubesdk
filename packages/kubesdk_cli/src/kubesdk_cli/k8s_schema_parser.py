@@ -541,9 +541,7 @@ class OpenAPIK8sParser(OpenAPIParser):
                     for f in model.fields:
                         if f.name == "apiVersion":
                             fields_to_add["group_"] = f.default.split('/')[0] if "/" in f.default else None
-                            fields_to_add["apiVersion_"] = f.default
                         elif f.name == "kind":
-                            fields_to_add["kind_"] = f.default
                             is_k8s_resource = True
 
                     for f in fields_to_add.keys():
@@ -631,12 +629,12 @@ class OpenAPIK8sParser(OpenAPIParser):
 
             if is_k8s_resource:
                 if field.name == "kind":
-                    # field.data_type = DataType(type="ClassVar[str]")
+                    field.data_type = DataType(type="ClassVar[str]")
                     field.default = kind
                     field.nullable = False
                     continue
                 if field.name == "apiVersion":
-                    # field.data_type = DataType(type="ClassVar[str]")
+                    field.data_type = DataType(type="ClassVar[str]")
                     field.default = f"{group}/{version}" if group else version
                     field.nullable = False
                     continue

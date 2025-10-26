@@ -24,14 +24,17 @@ def cli() -> None:
     ap.add_argument(
         "--from-dir", help="Directory with downloaded Kubernetes OpenAPI schema. You can take it for the needed version"
                            "here https://github.com/kubernetes/kubernetes/tree/release-1.34/api/openapi-spec")
-    ap.add_argument("--output", required=True,
-                    help="Directory to save generated dataclasses (root of the generated Python module)")
-    ap.add_argument("--url", help="Kubernetes cluster endpoint to take OpenAPI schema from your own cluster")
-    ap.add_argument("--http-headers", action="extend", nargs="+", default=[],
-                    help="Extra headers to use with --url: 'Authorization: Bearer some-token' (repeatable)")
-    ap.add_argument("--skip-tls", action="store_true", help="Disable TLS verification to use with --url")
-    ap.add_argument("--module-name", default="kube_models",
-                    help="Name of the generated module (will be used for all imports)")
+    ap.add_argument(
+        "--output", required=True, help="Directory to save generated dataclasses (root of the generated Python module)")
+    ap.add_argument(
+        "--url", help="Kubernetes cluster endpoint to take OpenAPI schema from your own cluster")
+    ap.add_argument(
+        "--http-headers", action="extend", nargs="+", default=[],
+        help="Extra headers to use with --url: 'Authorization: Bearer some-token' (repeatable)")
+    ap.add_argument(
+        "--skip-tls", action="store_true", help="Disable TLS verification to use with --url")
+    ap.add_argument(
+        "--module-name", default="kube_models", help="Name of the generated module (will be used for all imports)")
     args = ap.parse_args()
 
     assert args.url or args.from_dir, \

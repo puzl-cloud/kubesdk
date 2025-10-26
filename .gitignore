@@ -26,4 +26,4 @@ dist/
 *.json
 .devcontainer/
 kube_openapi_spec/
-packages/kube_models/src/*
+packages/kube_models/src/*/

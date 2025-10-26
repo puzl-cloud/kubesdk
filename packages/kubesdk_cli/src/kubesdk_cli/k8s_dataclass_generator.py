@@ -183,30 +183,78 @@ def write_base_resource_py(base_dir: str | Path, module_name: str, meta_version:
 
     content = f"""{GENERATED_HEADER}\
 import sys
-from typing import ClassVar, Optional, Set, List
+from typing import ClassVar, Optional, Set, List, Dict, Any, Type
 from dataclasses import dataclass, field
 from typing import TypeVar, Generic
 
-from .loader import loader, LazyLoadModel
+if sys.version_info < (3, 11):
+    from typing_extensions import Self
+else:
+    from typing import Self
+
+from .loader import loader, LazyLoadModel, _LOAD_LAZY_FIELD, _LOAD_TYPES_ON_INIT
 from .const import *
 
 from {module_name}.api_{meta_version}.io.k8s.apimachinery.pkg.apis.meta import ObjectMeta, ListMeta
+""" + """
+
+_DYNAMIC_CLASS_VARS = ["apiVersion", "kind"]
 
 
 @loader
 @dataclass(kw_only=True, frozen=True)
 class K8sResource(LazyLoadModel):
-    apiVersion: str
-    kind: str
+    apiVersion: ClassVar[str]
+    kind: ClassVar[str]
     metadata: ObjectMeta
 
+    # Useful fields which are not a part of the resource model
     api_path_: ClassVar[str]
     plural_: ClassVar[str]
-    group_: ClassVar[Optional[str]]
-    kind_: ClassVar[str]
-    apiVersion_: ClassVar[str]
+    group_: ClassVar[str]
     patch_strategies_: ClassVar[Set[PatchRequestType]]
     is_namespaced_: ClassVar[bool]
+    
+    @classmethod
+    def from_dict(cls, src: Dict[str, Any], lazy: bool = True) -> Self:
+        for var in _DYNAMIC_CLASS_VARS:
+            if var in src:
+                del src[var]
+        return cls(**src | {_LOAD_LAZY_FIELD: lazy, _LOAD_TYPES_ON_INIT: True})
+
+    def to_dict(self) -> Dict[str, Any]:
+        res = super().to_dict()
+        for var in _DYNAMIC_CLASS_VARS:
+            res[var] = getattr(self, var)
+        return res
+        
+
+def _bind_class_vars_from_original_kind(cls, params) -> Type:
+    T = params[0] if isinstance(params, tuple) else params
+    with cls._type_cache_lock:
+        cached = cls._type_cache.get(T)
+        if cached is not None:
+            return cached
+
+        # If vars are already concretely set on this class, don't override
+        if all(cls.__dict__.get(var) is not None for var in _DYNAMIC_CLASS_VARS):
+            cls._type_cache[T] = cls
+            return cls
+
+        # Check if something is unset in passed T class and do not inherit anything
+        kw = {var: getattr(T, var, None) for var in _DYNAMIC_CLASS_VARS}
+        for var, val in kw.items():
+            if val is None:
+                return cls
+
+        # Modify kind to default, if it wasn't set on this class
+        if not cls.__dict__.get("kind"):
+            kw["kind"] = f"{kw['kind']}List"
+
+        name = f"{cls.__name__}[{getattr(T, '__name__', repr(T))}]"
+        specialized = type(name, (cls,), kw | {"__resource_type__": T})
+        cls._type_cache[T] = specialized
+        return specialized
 """
     resource_py_path.write_text(content, encoding="utf-8")
 

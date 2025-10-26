@@ -4,6 +4,7 @@ requires-python = ">=3.10"
 
 [manifest]
 members = [
+    "kube-models",
     "kubesdk",
     "kubesdk-cli",
 ]
@@ -571,12 +572,8 @@ wheels = [
 
 [[package]]
 name = "kube-models"
-version = "0.0.1b1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/da/9c/71241192db95e4f751479baed1a666afbcf93834ff483a65a0b33a68c967/kube_models-0.0.1b1.tar.gz", hash = "sha256:2862ec09687bcdad4c3c7c8910ea7805185c56b57ac7bf72f3332ee3e809367a", size = 199285, upload-time = "2025-10-21T10:21:03.825Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/9a/84/38fc84227acf6363b44919730ed310e68c84f2832925717962a29d5608be/kube_models-0.0.1b1-py3-none-any.whl", hash = "sha256:5833782a1979f30b750a1851838270bea27ce472db320f4193afb7b95355d9a8", size = 531611, upload-time = "2025-10-21T10:21:02.328Z" },
-]
+version = "0.0.0"
+source = { editable = "packages/kube_models" }
 
 [[package]]
 name = "kubesdk"
@@ -595,7 +592,7 @@ cli = [
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = "==3.12.15" },
-    { name = "kube-models", specifier = "==0.0.*" },
+    { name = "kube-models", editable = "packages/kube_models" },
     { name = "kubesdk-cli", marker = "extra == 'cli'", editable = "packages/kubesdk_cli" },
 ]
 provides-extras = ["cli"]
