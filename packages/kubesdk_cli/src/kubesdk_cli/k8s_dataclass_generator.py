@@ -176,11 +176,10 @@ def write_inits_with_type_loader(base_dir: str | Path, extra_globals: List[str] 
         init_path.write_text(content, encoding="utf-8")
 
 
-def write_base_resource_py(base_dir: str | Path, meta_version: str):
+def write_base_resource_py(base_dir: str | Path, module_name: str, meta_version: str):
     base = Path(base_dir).resolve()
     resource_py_path = base / "_k8s_resource_base.py"
     logging.info(f"Writing base resource models at {resource_py_path}")
-    module_name = base.name
 
     content = f"""{GENERATED_HEADER}\
 import sys

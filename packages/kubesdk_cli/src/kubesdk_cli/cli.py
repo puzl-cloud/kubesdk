@@ -57,7 +57,7 @@ def cli() -> None:
         asyncio.run(generate_dataclasses_from_dir(
             from_dir, module_name=module_name, output=models_path, templates=templates_path))
     write_inits_with_type_loader(models_path, extra_globals)
-    write_base_resource_py(models_path, meta_version="v1")
+    write_base_resource_py(models_path, module_name, meta_version="v1")
     finalize_module_init(models_path, templates_path)
 
 
