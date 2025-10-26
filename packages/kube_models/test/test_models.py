@@ -11,7 +11,7 @@ class UtilsTest(TestCase):
         secret = cast(Type[Secret], get_k8s_resource_model('v1', 'Secret'))
         self.assertEqual("v1", secret.apiVersion)
         self.assertEqual("Secret", secret.kind)
-        self.assertEqual("", secret.group_)
+        self.assertIsNone(None, secret.group_)
         self.assertEqual("api/v1/namespaces/{namespace}/secrets", secret.api_path_)
         self.assertEqual("secrets", secret.plural_)
 
