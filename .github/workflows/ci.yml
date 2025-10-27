@@ -25,6 +25,6 @@ jobs:
       - name: Build
         run: uv build --all-packages
       - name: Model test
-        run: uv run --isolated --no-project --with dist/kubesdk-*.whl packages/kubesdk/test/test_models.py
+        run: uv run --isolated --no-project --with dist/kubesdk-*.whl python3 -m unittest discover -v -s packages/kube_models/test
       - name: Check if publishable (dry-run)
         run: uv publish --dry-run
