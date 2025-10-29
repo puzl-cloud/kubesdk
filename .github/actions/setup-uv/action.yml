@@ -7,8 +7,9 @@ runs:
     - name: Install uv
       uses: astral-sh/setup-uv@v7
       with:
+        version: "0.9.5"
         cache-local-path: "/tmp/.uv-cache"
-    
+
     - name: uv cache
       uses: puzl-cloud/github-actions-cache@v4
       with:

@@ -29,8 +29,13 @@ jobs:
           find packages -type d -name test | while read TEST_DIR; do
             PKG=$(dirname "${TEST_DIR}")
             echo "Running tests in ${TEST_DIR} ${PKG}"
-            uv run \
-              python3 -m unittest discover -v -s "${TEST_DIR}"
+            if [ "$(basename "$PKG")" = "kube_models" ]; then
+              uv run --isolated --no-project --with "${PKG}" \
+                python3 -m unittest discover -v -s "${TEST_DIR}"
+            else
+              uv run \
+                python3 -m unittest discover -v -s "${TEST_DIR}"
+            fi
           done
       - name: Check if publishable (dry-run)
         run: uv publish --dry-run
