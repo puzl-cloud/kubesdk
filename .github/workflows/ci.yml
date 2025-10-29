@@ -24,7 +24,13 @@ jobs:
         run: bash kube_models_generator.sh
       - name: Build
         run: uv build --all-packages
-      - name: Model test
-        run: uv run --isolated --no-project --with dist/kubesdk-*.whl python3 -m unittest discover -v -s packages/kube_models/test
+      - name: Run all package tests
+        run: |
+          find packages -type d -name test | while read TEST_DIR; do
+            PKG=$(dirname "${TEST_DIR}")
+            echo "Running tests in ${TEST_DIR} ${PKG}"
+            uv run \
+              python3 -m unittest discover -v -s "${TEST_DIR}"
+          done
       - name: Check if publishable (dry-run)
         run: uv publish --dry-run
