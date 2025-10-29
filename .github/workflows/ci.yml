@@ -24,6 +24,8 @@ jobs:
         run: bash kube_models_generator.sh
       - name: Build
         run: uv build --all-packages
+      - name: Sync
+        run: uv sync --group test
       - name: Run all package tests
         run: |
           find packages -type d -name test | while read TEST_DIR; do
