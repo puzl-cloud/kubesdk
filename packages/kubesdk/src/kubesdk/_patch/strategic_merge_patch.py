@@ -1,5 +1,5 @@
 from dataclasses import is_dataclass, fields
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Optional
 import copy
 
 from kube_models.const import *
@@ -12,7 +12,7 @@ def _is_primitive(x: Any) -> bool: return not isinstance(x, (dict, list))
 def _unescape(segment: str) -> str: return segment.replace("~1", "/").replace("~0", "~")
 
 
-def _split_pointer(path: str) -> List[str]:
+def _split_pointer(path: str) -> list[str]:
     if not path.startswith("/"):
         raise ValueError(f"Invalid JSON Pointer (must start with '/'): {path}")
     if path == "/":
@@ -22,15 +22,15 @@ def _split_pointer(path: str) -> List[str]:
 
 def _get_by_pointer(doc: Any, path: str) -> Any:
     parts = _split_pointer(path)
-    cur = doc
+    current = doc
     for p in parts:
-        if isinstance(cur, list):
+        if isinstance(current, list):
             if p == "-":
                 raise KeyError("'-' not valid for get")
-            cur = cur[int(p)]
+            current = current[int(p)]
         else:
-            cur = cur[p]
-    return cur
+            current = current[p]
+    return current
 
 
 def _set_by_pointer(doc: Any, path: str, value: Any) -> None:
@@ -88,7 +88,7 @@ def _is_int_token(tok: str) -> bool:
         return False
 
 
-def _lookup_merge_info_by_type(path_tokens: Tuple[str, ...], root: K8sResource) -> Optional[Dict[str, str]]:
+def _lookup_merge_info_by_type(path_tokens: tuple[str, ...], root: K8sResource) -> Optional[dict[str, str]]:
     current = root
     i = 0
     last_list_meta, last_field_meta = None, None
@@ -126,8 +126,8 @@ def _lookup_merge_info_by_type(path_tokens: Tuple[str, ...], root: K8sResource) 
     return last_list_meta or last_field_meta
 
 
-def _strategic_merge_diff(original: Dict, target: Dict, root: K8sResource, path: Tuple[str, ...] = None) \
-        -> Dict[str, Any]:
+def _strategic_merge_diff(original: dict, target: dict, root: K8sResource, path: tuple[str, ...] = None) \
+        -> dict[str, Any]:
     """
     Compute a Strategic Merge Patch (SMP) object that transforms `original` into `target`.
     
@@ -161,15 +161,15 @@ def _strategic_merge_diff(original: Dict, target: Dict, root: K8sResource, path:
     Returns:
       A dict representing the SMP for this level (possibly empty).
     """
-    result: Dict[str, Any] = {}
+    result: dict[str, Any] = {}
 
     if path is None:
         path = ()
 
     # Only dict-vs-dict is merged at this level; everything else is handled by the caller.
     if isinstance(original, dict) and isinstance(target, dict):
-        original_keys: Set[str] = set(original.keys())
-        target_keys: Set[str] = set(target.keys())
+        original_keys: set[str] = set(original.keys())
+        target_keys: set[str] = set(target.keys())
 
         for key in sorted(original_keys | target_keys):
             original_value = original.get(key)
@@ -194,14 +194,14 @@ def _strategic_merge_diff(original: Dict, target: Dict, root: K8sResource, path:
                     result[f"$deleteFromPrimitiveList/{key}"] = delete_from_primitive
                 continue
 
-            # Dict field
+            # dict field
             if isinstance(original_value, dict) and isinstance(target_value, dict):
                 field_meta = _lookup_merge_info_by_type(path + (key,), root)
 
                 # retainKeys strategy
                 if field_meta and field_meta.get(PATCH_STRATEGY) == FieldPatchStrategy.retainKeys:
                     retained_keys = sorted(target_value.keys())
-                    nested_patch: Dict[str, Any] = {}
+                    nested_patch: dict[str, Any] = {}
 
                     for sub_key in sorted(set(target_value.keys()) | set(original_value.keys())):
                         # Keys absent in target are implicitly dropped by retainKeys
@@ -255,8 +255,8 @@ def _strategic_merge_diff(original: Dict, target: Dict, root: K8sResource, path:
     return {}
 
 
-def _list_diff(original_list: List, target_list: List, root: K8sResource, path: Tuple[str, ...]) -> \
-        Tuple[Optional[list], Optional[list], bool, Optional[list]]:
+def _list_diff(original_list: list, target_list: list, root: K8sResource, path: tuple[str, ...]) -> \
+        tuple[Optional[list], Optional[list], bool, Optional[list]]:
     """
     Compute the strategic-merge delta between two lists.
 
@@ -287,7 +287,7 @@ def _list_diff(original_list: List, target_list: List, root: K8sResource, path: 
         target_map   = {
             item.get(merge_key): item for item in target_list if isinstance(item, dict) and merge_key in item
         }
-        patch_elems: List[Any] = []
+        patch_elems: list[Any] = []
 
         # Additions / modifications
         for k in target_map:
@@ -304,7 +304,7 @@ def _list_diff(original_list: List, target_list: List, root: K8sResource, path: 
             if k not in target_map:
                 patch_elems.append({merge_key: k, "$patch": "delete"})
 
-        def order_keys(seq: List[Any]) -> List[Any]:
+        def order_keys(seq: list[Any]) -> list[Any]:
             return [item.get(merge_key) for item in seq if isinstance(item, dict) and merge_key in item]
 
         order_changed = order_keys(original_list) != order_keys(target_list)
@@ -322,7 +322,7 @@ def _list_diff(original_list: List, target_list: List, root: K8sResource, path: 
         # If there are only deletions, prefer $deleteFromPrimitiveList.
         if deletions and not additions:
             seen = set()
-            deduped_deletions: List[Any] = []
+            deduped_deletions: list[Any] = []
             for v in deletions:
                 if v not in seen:
                     seen.add(v)
@@ -336,7 +336,7 @@ def _list_diff(original_list: List, target_list: List, root: K8sResource, path: 
     return None, None, False, None
 
 
-def jsonpatch_to_smp(resource: K8sResource, json_patch: List[Dict[str, Any]]) -> Dict[str, Any]:
+def jsonpatch_to_smp(resource: K8sResource, json_patch: list[dict[str, Any]]) -> dict[str, Any]:
     """
     Converts RFC6902 jsonPatch object into Kubernetes Strategic Merge Patch according to this proposal
     https://github.com/kubernetes/community/blob/master/contributors/devel/sig-api-machinery/strategic-merge-patch.md

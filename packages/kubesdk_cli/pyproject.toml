@@ -18,5 +18,8 @@ dependencies = [
     "requests==2.32.5"
 ]
 
+[dependency-groups]
+test = ["coverage"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/kubesdk_cli"]

@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-test = ["jsonpatch","coverage"]
+test = ["jsonpatch", "coverage"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kubesdk"]

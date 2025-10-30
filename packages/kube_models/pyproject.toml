@@ -11,5 +11,8 @@ readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Nik Paushkin", email = "nik@puzl.cloud" }]
 
+[dependency-groups]
+test = ["coverage"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/kube_models"]

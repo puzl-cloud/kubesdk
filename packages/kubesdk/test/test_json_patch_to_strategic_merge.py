@@ -12,7 +12,7 @@ from kube_models.api_v1.io.k8s.api.core.v1 import Container, PodSpec, EnvVar
 from kube_models.resource import K8sResource
 from kube_models.const import *
 
-from kubesdk._patch.json_patch_to_strategic_merge import jsonpatch_to_smp, _is_int_token, _list_diff, \
+from kubesdk._patch.strategic_merge_patch import jsonpatch_to_smp, _is_int_token, _list_diff, \
     _lookup_merge_info_by_type, _remove_by_pointer, _get_by_pointer, _set_by_pointer, _split_pointer
 from kubesdk._patch.json_patch import JsonPatchTestFailed
 

@@ -1,6 +1,5 @@
 """
 Compute a JSON Patch (RFC 6902) that transforms `old` into `new`.
-Supported operations: add, remove, replace.
 """
 from __future__ import annotations
 
