@@ -1,9 +1,11 @@
-# test_jsonpatch_diff.py
+# test_py
 
 import unittest
 import json
 from kubesdk._patch.json_patch import json_patch_from_diff, apply_patch, escape_json_path_pointer_token, \
-    _parse_pointer, JsonPointerError, _is_scalar, _deep_equal, _join_path, JsonPatchTestFailed
+    _parse_pointer, JsonPointerError, _is_scalar, _deep_equal, _join_path, JsonPatchTestFailed, \
+    guard_lists_from_json_patch_replacement, _list_item_roots_for_path, _get_at_pointer, _resolve_parent, \
+    _flatten_leaves
 
 class TestJsonPatchDiff(unittest.TestCase):
     def assertPatchTransforms(self, old, new):
@@ -338,3 +340,201 @@ class TestJsonPatchDiff(unittest.TestCase):
         patch = [{"op": "test", "path": "/a/-", "value": 1}]
         with self.assertRaises(JsonPointerError):
             apply_patch(doc, patch)
+
+    def test_get_at_pointer_edge_cases(self):
+        resource = {
+            "spec": {
+                "containers": [
+                    {"name": "a", "image": "img:a"},
+                    {"name": "b", "image": "img:b"},
+                ]
+            }
+        }
+        self.assertEqual(resource, _get_at_pointer(resource, []))
+        with self.assertRaises(JsonPointerError):
+            # non-digit on list
+            _get_at_pointer(resource, ["spec", "containers", "foo"])
+            # out of range index
+            _get_at_pointer(resource, ["spec", "containers", "99"])
+            # scalar mid-path
+            self.assertIsNone(_get_at_pointer({"a": 1}, ["a", "b"]))
+
+
+class TestJsonPatchListGuards(unittest.TestCase):
+    def test_list_item_roots_for_path_inside_item(self):
+        resource = {
+            "spec": {
+                "containers": [
+                    {"name": "a", "image": "img:a"},
+                    {"name": "b", "image": "img:b"},
+                ]
+            }
+        }
+        # /spec/containers/1/image -> targets that specific list item root
+        segments = ["spec", "containers", "1", "image"]
+        roots = _list_item_roots_for_path(resource, segments)
+        self.assertEqual(roots, [["spec", "containers", "1"]])
+
+    def test_list_item_roots_for_path_root_list_all_items(self):
+        resource = {
+            "spec": {
+                "containers": [
+                    {"name": "a", "image": "img:a"},
+                    {"name": "b", "image": "img:b"},
+                ]
+            }
+        }
+        # /spec/containers -> treat this as the list root, return all indices
+        segments = ["spec", "containers"]
+        roots = _list_item_roots_for_path(resource, segments)
+        self.assertEqual(
+            roots,
+            [["spec", "containers", "0"], ["spec", "containers", "1"]],
+        )
+
+    def test_list_item_roots_for_path_invalid_index_and_missing_key(self):
+        resource = {"items": [{"x": 1}]}
+        # invalid index
+        roots1 = _list_item_roots_for_path(resource, ["items", "5", "x"])
+        self.assertEqual(roots1, [])
+        # non-digit segment in list
+        roots2 = _list_item_roots_for_path(resource, ["items", "foo"])
+        self.assertEqual(roots2, [])
+        # missing key
+        roots3 = _list_item_roots_for_path(resource, ["missing"])
+        self.assertEqual(roots3, [])
+
+    def test_list_item_roots_for_path_scalar_midpath(self):
+        resource = {"a": 1}
+        segments = ["a", "b"]
+        roots = _list_item_roots_for_path(resource, segments)
+        self.assertEqual(roots, [])
+
+    def test_flatten_leaves(self):
+        node = {"a": 1, "b": {"c": [10, 20]}}
+        leaves = _flatten_leaves(node, ["root"])
+        leaves_sorted = sorted(leaves)
+        self.assertEqual(
+            leaves_sorted,
+            sorted([
+                (["root", "a"], 1),
+                (["root", "b", "c", "0"], 10),
+                (["root", "b", "c", "1"], 20),
+            ])
+        )
+
+    def test_guard_lists_from_json_patch_replacement_item_level(self):
+        resource = {
+            "spec": {
+                "containers": [
+                    {"name": "a", "image": "img:a"},
+                    {"name": "b", "image": "img:b"},
+                ]
+            }
+        }
+        patch_ops = [
+            {"op": "replace", "path": "/spec/containers/1/image", "value": "img:new"},
+        ]
+        guarded = guard_lists_from_json_patch_replacement(patch_ops, resource)
+
+        # Expect tests for all leaves of containers[1] (name + image) before the replacement op
+        test_ops = [op for op in guarded if op["op"] == "test"]
+        replace_ops = [op for op in guarded if op["op"] == "replace"]
+
+        # Original replace must still be present
+        self.assertEqual(replace_ops, patch_ops)
+
+        # test ops should cover the current values of that item
+        test_paths = sorted(op["path"] for op in test_ops)
+        self.assertEqual(
+            test_paths,
+            sorted([
+                "/spec/containers/1/name",
+                "/spec/containers/1/image",
+            ])
+        )
+
+        for op in test_ops:
+            if op["path"].endswith("/name"):
+                self.assertEqual(op["value"], "b")
+            elif op["path"].endswith("/image"):
+                self.assertEqual(op["value"], "img:b")
+
+    def test_guard_lists_from_json_patch_replacement_list_root(self):
+        resource = {
+            "spec": {
+                "containers": [
+                    {"name": "a", "image": "img:a"},
+                    {"name": "b", "image": "img:b"},
+                ]
+            }
+        }
+        patch_ops = [
+            {"op": "replace", "path": "/spec/containers", "value": []},
+        ]
+        guarded = guard_lists_from_json_patch_replacement(patch_ops, resource)
+
+        # We expect test ops for *all* items (index 0 and 1), every leaf
+        test_ops = [op for op in guarded if op["op"] == "test"]
+        test_paths = sorted(op["path"] for op in test_ops)
+
+        self.assertIn("/spec/containers/0/name", test_paths)
+        self.assertIn("/spec/containers/0/image", test_paths)
+        self.assertIn("/spec/containers/1/name", test_paths)
+        self.assertIn("/spec/containers/1/image", test_paths)
+
+        # final replace op should still be present
+        self.assertEqual(
+            guarded[-1],
+            {"op": "replace", "path": "/spec/containers", "value": []},
+        )
+
+    def test_guard_lists_duplicate_roots_and_weird_paths(self):
+        resource = {
+            "spec": {
+                "containers": [
+                    {"name": "a", "image": "img:a"},
+                    {"name": "b", "image": "img:b"},
+                ]
+            }
+        }
+        patch_ops = [
+            # two ops touching the same item 0 -> should only inject tests once
+            {"op": "replace", "path": "/spec/containers/0/image", "value": "img:new0"},
+            {"op": "replace", "path": "/spec/containers/0/name", "value": "newname0"},
+
+            # path None branch
+            {"op": "replace", "path": None, "value": "whatever"},
+
+            # pointer_no_slash == "" branch (root pointer "/")
+            {"op": "replace", "path": "/", "value": {"reset": True}},
+        ]
+
+        guarded = guard_lists_from_json_patch_replacement(patch_ops, resource)
+
+        # collect tests for index 0
+        test_ops_for_0 = [
+            op for op in guarded
+            if op["op"] == "test" and op["path"].startswith("/spec/containers/0/")
+        ]
+        paths_for_0 = [op["path"] for op in test_ops_for_0]
+
+        # We expect both name and image, but not duplicated multiple times
+        self.assertIn("/spec/containers/0/name", paths_for_0)
+        self.assertIn("/spec/containers/0/image", paths_for_0)
+        self.assertEqual(len(paths_for_0), len(set(paths_for_0)))
+
+        # Ensure the replacement of "/" made it through untouched
+        self.assertIn({"op": "replace", "path": "/", "value": {"reset": True}}, guarded)
+
+    def test_apply_patch_list_index_replacement(self):
+        # covers _resolve_parent list branch
+        doc = {"a": [{"x": 1}, {"x": 2}]}
+        patch_ops = [{"op": "replace", "path": "/a/1/x", "value": 99}]
+        result = apply_patch(doc, patch_ops)
+        self.assertEqual(result, {"a": [{"x": 1}, {"x": 99}]})
+
+    def test_resolve_parent_empty_tokens(self):
+        parent_node, last_token = _resolve_parent({"x": 1}, [])
+        self.assertIsNone(parent_node)
+        self.assertEqual(last_token, "")

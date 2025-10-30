@@ -1,5 +1,5 @@
 """
-Compute a JSON Patch (RFC 6902) that transforms `old` into `new`.
+Utils to work with a JSON Patch (RFC 6902).
 """
 from __future__ import annotations
 
@@ -155,6 +155,10 @@ def _diff_any(old_value: Any, new_value: Any, json_pointer: str, patch_ops: list
 def json_patch_from_diff(old_doc: Json, new_doc: Json) -> list[Op]:
     """
     Compute a JSON Patch that transforms old_doc into new_doc.
+    :param old_doc: Old version of the object
+    :param new_doc: Version of the object after the JSON Patch applied
+    :returns:
+        RFC6902 JSON Patch object
     """
     patch_ops: list[Op] = []
 
@@ -399,3 +403,104 @@ def apply_patch(document: Json, patch_ops: list[Op]) -> Json:
         raise NotImplementedError(f"Unsupported op: {operation}")
 
     return result
+
+
+def _list_item_roots_for_path(latest_known_resource: dict[str, Any], segments: list[str]) -> list[list[str]]:
+    """
+    Detect which list item roots are affected by a path based on actual types in latest_known_resource.
+
+    - If traversal steps into a list (numeric segment on a list) -> return that single item root.
+    - Else, if the resolved node is a list (path points at list root) -> return roots for all current items.
+    - Else -> empty list (no list involvement).
+    """
+    cur = latest_known_resource
+    for i, s in enumerate(segments):
+        if isinstance(cur, list):
+            # Real list: only numeric seg is a valid index
+            if s.isdigit():
+                idx = int(s)
+                if 0 <= idx < len(cur):
+                    # this op targets inside this list item
+                    return [segments[:i+1]]
+                else:
+                    # invalid index -> no tests
+                    return []
+            else:
+                # non-numeric segment on a list -> not a list path for our purposes
+                return []
+        elif isinstance(cur, dict):
+            if s in cur:
+                cur = cur[s]
+            else:
+                # missing key -> no tests
+                return []
+        else:
+            # scalar mid-path -> no tests
+            return []
+
+    # Completed walk without stepping into a list element.
+    # If the resolved node is a list, treat the path as targeting the list root.
+    if isinstance(cur, list):
+        return [segments + [str(i)] for i in range(len(cur))]
+    return []
+
+
+def _flatten_leaves(node: Any, base: list[str]) -> list[tuple[list[str], Any]]:
+    """Return (path, value) for all scalar leaves under node, starting from base path."""
+    out: list[tuple[list[str], Any]] = []
+    if isinstance(node, dict):
+        for k, v in node.items():
+            out.extend(_flatten_leaves(v, base + [k]))
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            out.extend(_flatten_leaves(v, base + [str(i)]))
+    else:
+        out.append((base, node))
+    return out
+
+
+def guard_lists_from_json_patch_replacement(json_patch: list[dict[str, Any]], latest_known_resource: dict[str, Any]) \
+        -> list[dict[str, Any]]:
+    """
+    Inserts `test` operations guarding list items touched by the given JSON Patch.
+
+    For each op:
+      - If path targets inside a list item -> add `test` for all leaf key/values under that item.
+      - Else if path targets a list root -> add `test` for leaves under every item currently in the list.
+
+    :param json_patch: RFC6902 JSON Patch object
+    :param latest_known_resource: version of the object which is supposed to be patched
+    :returns:
+        RFC6902 JSON Patch object
+    """
+    new_json_patch: list[dict[str, Any]] = []
+    tested_roots: set[str] = set()
+
+    for op in json_patch:
+        pointer = op.get("path", "")
+        if pointer is None:
+            segments = []
+        else:
+            pointer = pointer.lstrip("/")
+            segments = [] if pointer == "" else [s for s in pointer.split("/") if s != ""]
+        item_roots = _list_item_roots_for_path(latest_known_resource, segments)
+
+        # Insert tests once per item root
+        for root in item_roots:
+            root_ptr = "/" + "/".join(root)
+            if root_ptr in tested_roots:
+                continue
+            tested_roots.add(root_ptr)
+
+            item_node = _get_at_pointer(latest_known_resource, root)
+            if item_node is not None:
+                for leaf_path, leaf_val in _flatten_leaves(item_node, root):
+                    new_json_patch.append({
+                        "op": "test",
+                        "path": "/" + "/".join(leaf_path),
+                        "value": leaf_val
+                    })
+
+        new_json_patch.append(op)
+
+    return new_json_patch
