@@ -1,17 +1,30 @@
 name: Setup UV Environment
 description: Install uv and configure caching
 
+inputs:
+  uv-version:
+    description: Version of uv to install
+    required: false
+    default: "0.9.6"
+
+  python-version:
+    description: Python version to install
+    required: false
+    default: "3.11"
+
 runs:
   using: composite
   steps:
     - name: Install uv
       uses: astral-sh/setup-uv@v7
       with:
-        version: "0.9.5"
+        version: ${{ inputs.uv-version }}
+        python-version: ${{ inputs.python-version }}
         cache-local-path: "/tmp/.uv-cache"
+        enable-cache: false
 
-    - name: uv cache
+    - name: Cache uv
       uses: puzl-cloud/github-actions-cache@v4
       with:
         path: /tmp/.uv-cache
-        key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+        key: uv-${{ runner.os }}-${{ inputs.python-version }}-${{ hashFiles('uv.lock') }}

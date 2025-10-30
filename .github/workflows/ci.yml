@@ -11,33 +11,45 @@ on:
 
 jobs:
   test:
-    name: Run tests
+    name: Run tests on Python ${{ matrix.python-version }}
     runs-on: puzl-ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ "3.10", "3.11", "3.12", "3.13", "3.14" ]
     env:
-      UV_SYSTEM_PYTHON: 1
       MAX_PARALLEL_DOWNLOAD: 10
     steps:
       - uses: actions/checkout@v5
       - name: Setup UV
         uses: ./.github/actions/setup-uv
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Sync UV
+        run: uv sync --group test
+      - name: Build kubesdk-cli
+        run: |
+          uv build packages/kubesdk_cli
       - name: Generate data models
         run: bash kube_models_generator.sh
-      - name: Build
-        run: uv build --all-packages
-      - name: Sync
-        run: uv sync --group test
-      - name: Run all package tests
+      - name: Build kube-models
+        run: uv build packages/kube_models
+      - name: Run kube-models tests with coverage
         run: |
-          find packages -type d -name test | while read TEST_DIR; do
-            PKG=$(dirname "${TEST_DIR}")
-            echo "Running tests in ${TEST_DIR} ${PKG}"
-            if [ "$(basename "$PKG")" = "kube_models" ]; then
-              uv run --isolated --no-project --with "${PKG}" \
-                python3 -m unittest discover -v -s "${TEST_DIR}"
-            else
-              uv run \
-                python3 -m unittest discover -v -s "${TEST_DIR}"
-            fi
-          done
+          uv run coverage run --parallel-mode -m unittest discover -v -s packages/kube_models/test
+      - name: Build kubesdk
+        run: uv build packages/kubesdk
+      - name: Run kubesdk tests with coverage
+        run: |
+          uv run coverage run --parallel-mode -m unittest discover -v -s packages/kubesdk/test
+      - name: Combine coverage reports
+        run: |
+          uv run coverage combine
+          uv run coverage xml
+      #- name: Upload coverage to Coveralls
+      #  uses: coverallsapp/github-action@v2
+      #  with:
+      #    github-token: ${{ secrets.GITHUB_TOKEN }}
+      #    path-to-lcov: coverage.xml
       - name: Check if publishable (dry-run)
         run: uv publish --dry-run
