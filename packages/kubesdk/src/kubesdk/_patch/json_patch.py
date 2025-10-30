@@ -1,5 +1,5 @@
 """
-Utils to work with a JSON Patch (RFC 6902).
+Utils to work with JSON Patch (RFC 6902).
 """
 from __future__ import annotations
 
@@ -86,14 +86,6 @@ def _join_path(base_path: str, token: str) -> str:
 def _is_scalar(value: Any) -> bool:
     return isinstance(value, (str, int, float, type(None), bool))
 
-def _deep_equal(left: Any, right: Any) -> bool:
-    # Using Python equality covers nested structures well,
-    # but handle objects with weird __eq__ safely.
-    try:
-        return left == right
-    except Exception:
-        return False
-
 def _diff_dict(old_map: dict[str, Any], new_map: dict[str, Any], json_pointer: str, patch_ops: list[Op]) -> None:
     old_keys = set(old_map.keys())
     new_keys = set(new_map.keys())
@@ -135,7 +127,7 @@ def _diff_list(old_list: list[Any], new_list: list[Any], json_pointer: str, patc
             raise RuntimeError(f"Unexpected opcode tag: {tag}")
 
 def _diff_any(old_value: Any, new_value: Any, json_pointer: str, patch_ops: list[Op]) -> None:
-    if _deep_equal(old_value, new_value):
+    if old_value == new_value:
         return
 
     # Different types -> replace
@@ -172,7 +164,7 @@ def json_patch_from_diff(old_doc: Json, new_doc: Json) -> list[Op]:
     elif isinstance(old_doc, list):
         _diff_list(old_doc, new_doc, "", patch_ops)
     else:
-        if not _deep_equal(old_doc, new_doc):
+        if old_doc != new_doc:
             patch_ops.append({"op": "replace", "path": "/", "value": copy.deepcopy(new_doc)})
 
     return patch_ops
@@ -250,7 +242,7 @@ def apply_patch(document: Json, patch_ops: list[Op]) -> Json:
         if operation == "test":
             expected = op.get("value")
             target_value = result if is_root else _get_at_pointer(result, tokens)
-            if not _deep_equal(target_value, expected):
+            if target_value != expected:
                 raise JsonPatchTestFailed(f"Test failed at path {path}")
             continue
 

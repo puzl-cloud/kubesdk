@@ -3,9 +3,8 @@
 import unittest
 import json
 from kubesdk._patch.json_patch import json_patch_from_diff, apply_patch, escape_json_path_pointer_token, \
-    _parse_pointer, JsonPointerError, _is_scalar, _deep_equal, _join_path, JsonPatchTestFailed, \
-    guard_lists_from_json_patch_replacement, _list_item_roots_for_path, _get_at_pointer, _resolve_parent, \
-    _flatten_leaves
+    _parse_pointer, JsonPointerError, _join_path, JsonPatchTestFailed, guard_lists_from_json_patch_replacement, \
+    _list_item_roots_for_path, _get_at_pointer, _resolve_parent, _flatten_leaves
 
 class TestJsonPatchDiff(unittest.TestCase):
     def assertPatchTransforms(self, old, new):
@@ -144,28 +143,6 @@ class TestJsonPatchDiff(unittest.TestCase):
         # remove into scalar parent
         with self.assertRaises(JsonPointerError):
             apply_patch(1, [{"op":"remove","path":"/0"}])
-
-    def test_is_scalar_and_deep_equal_exception(self):
-        self.assertTrue(_is_scalar(1))
-        self.assertTrue(_is_scalar("x"))
-        self.assertTrue(_is_scalar(False))
-        self.assertTrue(_is_scalar(None))
-        self.assertFalse(_is_scalar([]))
-        self.assertFalse(_is_scalar({}))
-
-        class BadEq:
-            def __init__(self, v): self.v = v
-            def __eq__(self, other):
-                raise RuntimeError("boom")
-
-        a, b = BadEq(1), BadEq(2)
-        # _deep_equal should handle exception and return False
-        self.assertFalse(_deep_equal(a, b))
-        # This should generate a replace op at root; apply and compare fields (avoid __eq__)
-        patch = json_patch_from_diff(a, b)
-        res = apply_patch(a, patch)
-        self.assertEqual(res.__class__, b.__class__)
-        self.assertEqual(getattr(res, 'v', None), getattr(b, 'v', None))
 
     def test_add_root(self):
         doc = {"a": 1}
