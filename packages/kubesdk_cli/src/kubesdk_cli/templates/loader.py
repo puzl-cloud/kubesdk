@@ -29,7 +29,7 @@ def _supports_lazy_load(obj: Any) -> bool:
     return bool([f for f in all_fields if f.name == _LAZY_SRC_FIELD])
 
 
-def _inject_lazy_load(obj_type: type[Any], kwargs: Dict[str, Any], use_lazy: bool) -> Dict[str, Any]:
+def _inject_lazy_load(obj_type: type[Any], kwargs: dict[str, Any], use_lazy: bool) -> dict[str, Any]:
     if _supports_lazy_load(obj_type) and use_lazy:
         return kwargs | {_LOAD_LAZY_FIELD: True, _LOAD_TYPES_ON_INIT: True}
     return kwargs
@@ -372,7 +372,7 @@ def _to_immutable(v: Any) -> Any:
         return repr(v)
 
 
-@dataclass(kw_only=True, frozen=True)
+@dataclass(slots=True, kw_only=True, frozen=True)
 class LazyLoadModel:
     """
     This model supports lazy loading of complex nested types avoiding unnecessary heavy recursions in @loader.
@@ -381,10 +381,9 @@ class LazyLoadModel:
     _lazy: bool = field(default=False)
 
     @classmethod
-    def from_dict(cls, src: Dict[str, Any], lazy: bool = True) -> Self:
+    def from_dict(cls, src: dict[str, Any], lazy: bool = True) -> Self:
         return cls(**src | {_LOAD_LAZY_FIELD: lazy, _LOAD_TYPES_ON_INIT: True})
 
-    # FixMe: We must also call constructor when attempting to call __dict__ or some other basic class attrs
     def __getattribute__(self, name: str) -> Any:
         """
         Overrides the default attribute access behavior to implement lazy construction of Python types in a runtime.
@@ -399,11 +398,13 @@ class LazyLoadModel:
         # Lazy load release data from body, if it's not set yet. We're interested in the following fields only.
         if name in [_LAZY_SRC_FIELD, _LOAD_LAZY_FIELD] or name.startswith("__") \
                 or name not in getattr(self.__class__, "__dataclass_fields__", {}):
-            return super().__getattribute__(name)
+            # Never call super() here:
+            # slotted dataclass have no __class__ attribute, which will end with infinite recursion
+            return object.__getattribute__(self, name)
 
         # Check if we even want lazy load for this instance
         if not self._lazy:
-            return super().__getattribute__(name)
+            return object.__getattribute__(self, name)
 
         current_value = object.__getattribute__(self, name)
         if current_value is not None:
@@ -429,7 +430,7 @@ class LazyLoadModel:
             field_type = hints[name]
             field_value = _evaluate_value(field_type, src_value, use_lazy=self._lazy)
         object.__setattr__(self, name, field_value)
-        return super().__getattribute__(name)
+        return object.__getattribute__(self, name)
 
     def _realize_all(self) -> None:
         """Force load of all dataclass fields"""
@@ -441,11 +442,15 @@ class LazyLoadModel:
     def __getstate__(self):
         """
         Make deepcopy/pickle see realized state without implementing our own deepcopy.
-        We trigger normal attribute access to realize lazy fields and then return __dict__.
         """
         self._realize_all()
-        # Return the instance dict as state
-        return dict(super().__getattribute__("__dict__"))
+
+        # build state dict manually (slots instance has no __dict__)
+        cls = object.__getattribute__(self, "__class__")
+        state = {}
+        for f in fields(cls):
+            state[f.name] = object.__getattribute__(self, f.name)
+        return state
 
     def __setstate__(self, state):
         # Restore state (allowed for frozen via object.__setattr__)
@@ -472,7 +477,7 @@ class LazyLoadModel:
             public_items.append((n, _to_immutable(getattr(self, n))))
         return hash(tuple(public_items))
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         result = {}
         for f in fields(self):
             # Skip all private fields

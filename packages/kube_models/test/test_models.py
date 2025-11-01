@@ -1,5 +1,6 @@
 from unittest import TestCase
 from typing import Type, cast
+import copy
 
 from kube_models import get_k8s_resource_model
 from kube_models.api_v1.io.k8s.apimachinery.pkg.apis.meta.v1 import ObjectMeta
@@ -29,3 +30,6 @@ class UtilsTest(TestCase):
 
         loaded_secret = Secret.from_dict(dumped_secret)
         self.assertEqual(secret_instance, loaded_secret)
+
+        copied_secret = copy.deepcopy(loaded_secret)
+        self.assertEqual(secret_instance, copied_secret)
