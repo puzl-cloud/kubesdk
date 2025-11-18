@@ -510,7 +510,20 @@ class OpenAPIK8sParser(OpenAPIParser):
         self.operations.append(OperationMeta(op=operation, path=path_name, method=method))
 
     def add_k8s_path(self):
+        patch_strategies_f_name = "patch_strategies_"
         for model in self.results:
+            version, kind = None, None
+            for f in model.fields:
+                if f.name == "apiVersion":
+                    version = f.default
+                if f.name == "kind":
+                    kind = f.default
+
+            maybe_k8s_resource = version and kind
+            if not maybe_k8s_resource:
+                continue
+
+
             is_k8s_resource, patch_collected = False, False
             fields_to_add, field_types = {}, {}
             for meta in self.operations:
@@ -532,6 +545,8 @@ class OpenAPIK8sParser(OpenAPIParser):
 
                 # Build basic K8sResource fields from POST (create) queries for this model
                 if meta.method == "post":
+                    is_k8s_resource = True
+
                     # Add a few useful ClassVars
                     fields_to_add |= {
                         "api_path_": meta.path,
@@ -541,8 +556,6 @@ class OpenAPIK8sParser(OpenAPIParser):
                     for f in model.fields:
                         if f.name == "apiVersion":
                             fields_to_add["group_"] = f.default.split('/')[0] if "/" in f.default else None
-                        elif f.name == "kind":
-                            is_k8s_resource = True
 
                     for f in fields_to_add.keys():
                         if f == "group_":
@@ -563,24 +576,35 @@ class OpenAPIK8sParser(OpenAPIParser):
                                             f"You must update your PatchRequestType enum spec!")
 
                     patch_strategies = {media for media in media_types}
-                    fields_to_add |= {"patch_strategies_": patch_strategies}
+                    fields_to_add |= {patch_strategies_f_name: patch_strategies}
 
                     # FixMe: Generator can't render enum values properly, so we render them as strings,
                     #  which makes IDE's typechecker puke
-                    field_types |= {"patch_strategies_": "ClassVar[Set[PatchRequestType]]"}
+                    field_types |= {patch_strategies_f_name: "ClassVar[Set[PatchRequestType]]"}
                     patch_collected = True
 
                 # Skip everything else
                 else:
                     continue
 
-                if is_k8s_resource and patch_collected:
+                if patch_collected:
                     break
 
             # Forcibly exclude patch options from sub-resources. They can be used in both native resources and CRDs,
             # so we could break the client with strategic merge, for example.
             # Better not to set patch_strategies_ for sub-resources at all.
+            # if not is_k8s_resource:
+            #     if patch_strategies_f_name in fields_to_add:
+            #         del fields_to_add[patch_strategies_f_name]
+            #         del field_types[patch_strategies_f_name]
+            #
+
+            # K8sResource is the resource which can be created via POST request
             if not is_k8s_resource:
+                # Also, drop all ClassVars in all sub-resources to avoid issue with from_dict() dynamic loading
+                for f in model.fields:
+                    if f.name in ["kind", "apiVersion"] and f.data_type == DataType(type="ClassVar[str]"):
+                        f.data_type = DataType(type="str")
                 continue
 
             for f_name, default in fields_to_add.items():

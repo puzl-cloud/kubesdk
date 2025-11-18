@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import asyncio
+import string
+import secrets
 import base64
 import functools
 import os
@@ -14,7 +16,7 @@ import ssl
 import threading
 import tempfile
 from contextvars import ContextVar
-from typing import Any, Callable, Generic, Iterator, Mapping, Optional, TypeVar, cast
+from typing import Any, Callable, Generic, Iterator, Mapping, TypeVar, cast, Awaitable
 
 import aiohttp
 
@@ -24,6 +26,7 @@ from .credentials import Vault, ConnectionInfo, LoginError
 
 
 T = TypeVar("T")
+DEFAULT_VAULT_NAME = "default"
 
 
 class GlobalContextVar(Generic[T]):
@@ -39,7 +42,7 @@ class GlobalContextVar(Generic[T]):
     def __init__(self, name: str):
         self._local: ContextVar[T] = ContextVar(name + "_local")
         self._has_global: bool = False
-        self._global_value: Optional[T] = None
+        self._global_value: T = None
 
     def set(self, value: T):
         token = self._local.set(value)
@@ -62,7 +65,7 @@ class GlobalContextVar(Generic[T]):
 
 # Per-controller storage and exchange point for authentication methods.
 # This uses GlobalContextVar to behave the same way across threads and event loops.
-auth_vault_var: GlobalContextVar[Vault] = GlobalContextVar("auth_vault_var")
+_auth_vault_var: GlobalContextVar[dict[str, Vault]] = GlobalContextVar("_auth_vault_var")
 
 
 _F = TypeVar("_F", bound=Callable[..., Any])
@@ -76,61 +79,37 @@ def authenticated(fn: _F) -> _F:
     """
     @functools.wraps(fn)
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
-        if "context" in kwargs:
-            return await fn(*args, **kwargs)
+        # We have this undocumented in a rare case of multiple clients with different RBAC within one cluster.
+        # Should never be used normally.
+        session_key = kwargs.pop("_session_key", "default")
+        explicit_context: APIContext | None = kwargs.pop("_context", None)
+        if explicit_context is not None:
+            return await explicit_context.call(fn, *args, **kwargs)
 
-        if "session_context_key" in kwargs:
-            session_context_key = kwargs["session_context_key"]
-        else:
-            session_context_key = host_from_url(kwargs.get("url")) or "UNKNOWN-SERVER"
-
-        vault: Vault = auth_vault_var.get()
-        async for key, info, context in vault.extended(APIContext, f"context-{session_context_key}"):
+        vault_key = host_from_url(kwargs.get("url")) or DEFAULT_VAULT_NAME
+        vaults = _auth_vault_var.get()
+        vault = vaults.get(vault_key)
+        forbidden_err = None
+        async for key, info, context in vault.extended(APIContext, f"context-{session_key}"):
             try:
-                return await fn(*args, **kwargs, context=context)
+                return await context.call(fn, *args, **kwargs)
             except UnauthorizedError as e:
                 await vault.invalidate(key, info, exc=e)
+            except ForbiddenError as e:
+                # NB: We do not invalidate credentials on 403 because we might have separate contexts
+                # with different accounts for different Roles. One might access one resource,
+                # and have no access to another resource within the same cluster.
+                # However, using multiple accounts in the same process within the same cluster is NOT a good practice.
+                # Such a setup can lead to invalid credentials renewing due to wait_for_emptiness() mechanics.
+                forbidden_err = e
             except RuntimeError as e:
                 if not context.closed:
                     raise
                 await vault.invalidate(key, info, exc=e)
 
-        raise RuntimeError("Reached an impossible state: the end of the authentication cycle.")
+        raise forbidden_err or UnauthorizedError()
 
     return cast(_F, wrapper)
-
-
-class AiohttpSessionProxy:
-    """
-    A lightweight proxy that exposes aiohttp-like methods. We need this because aiohttp sessions are not thread-safe.
-    It forwards requests into the worker pool and returns the worker result.
-    """
-    def __init__(self, context: APIContext):
-        self._context = context
-
-    async def request(self, method: str, url: str, **kwargs: Any) -> Any:
-        return await self._context.request(method, url, **kwargs)
-
-    async def get(self, url: str, **kwargs: Any) -> Any:
-        return await self.request("GET", url, **kwargs)
-
-    async def post(self, url: str, **kwargs: Any) -> Any:
-        return await self.request("POST", url, **kwargs)
-
-    async def put(self, url: str, **kwargs: Any) -> Any:
-        return await self.request("PUT", url, **kwargs)
-
-    async def patch(self, url: str, **kwargs: Any) -> Any:
-        return await self.request("PATCH", url, **kwargs)
-
-    async def delete(self, url: str, **kwargs: Any) -> Any:
-        return await self.request("DELETE", url, **kwargs)
-
-    async def head(self, url: str, **kwargs: Any) -> Any:
-        return await self.request("HEAD", url, **kwargs)
-
-    async def options(self, url: str, **kwargs: Any) -> Any:
-        return await self.request("OPTIONS", url, **kwargs)
 
 
 class _Worker:
@@ -143,7 +122,11 @@ class _Worker:
         self._session_factory = session_factory
 
         self._loop = asyncio.new_event_loop()
-        self._thread = threading.Thread(target=self._run, name=f"api-worker-{worker_index}", daemon=True)
+        self._thread = threading.Thread(
+            target=self._run,
+            name=f"api-worker-{worker_index}",
+            daemon=True
+        )
         self._ready = threading.Event()
         self._closing = threading.Event()
         self._sessions: list[Any] = []
@@ -152,29 +135,27 @@ class _Worker:
         self._ready.wait()
 
     @property
-    def loop(self) -> asyncio.AbstractEventLoop:
-        return self._loop
+    def loop(self) -> asyncio.AbstractEventLoop: return self._loop
+    @property
+    def sessions(self) -> list[Any]: return self._sessions
 
     def _run(self) -> None:
         asyncio.set_event_loop(self._loop)
-        self._loop.create_task(self._create_sessions())
-        self._ready.set()
+
+        async def _init() -> None:
+            for _ in range(self.sessions_per_worker):
+                session = self._session_factory()
+                if asyncio.iscoroutine(session):
+                    session = await session
+                self._sessions.append(session)
+            self._ready.set()
+
+        self._loop.run_until_complete(_init())
         try:
             self._loop.run_forever()
         finally:
-            # Best effort close of sessions
             self._loop.run_until_complete(self._close_sessions())
-            self._loop.stop()
             self._loop.close()
-
-    async def _create_sessions(self) -> None:
-        # Sessions must be created in the worker loop
-        for _ in range(self.sessions_per_worker):
-            session = self._session_factory()
-            # Support async factory returning a session
-            if asyncio.iscoroutine(session):
-                session = await session
-            self._sessions.append(session)
 
     async def _close_sessions(self) -> None:
         for s in self._sessions:
@@ -191,18 +172,8 @@ class _Worker:
                     pass
         self._sessions.clear()
 
-    def submit_request(self, session_index: int, method: str, url: str, **kwargs: Any):
-        async def _do():
-            session = self._sessions[session_index]
-            req = getattr(session, "request", None)
-            if req is None:
-                raise RuntimeError("Session does not have request()")
-            result = req(method, url, **kwargs)
-            if asyncio.iscoroutine(result):
-                return await result
-            return result
-
-        return asyncio.run_coroutine_threadsafe(_do(), self._loop)
+    def run_coroutine(self, coro: Awaitable[Any]):
+        return asyncio.run_coroutine_threadsafe(coro, self._loop)
 
     def stop(self) -> None:
         if not self._closing.is_set():
@@ -214,26 +185,32 @@ class _Worker:
 
 class APIContext:
     """
-    A container around a pool of worker threads. Each worker owns an aiohttp session pool.
-    Requests are routed to sessions using a global round-robin across all sessions,
-    regardless of the caller thread or event loop.
+    Multi-thread, multi-session context with full TLS/auth header logic.
+
+    - Owns `threads` worker threads, each with its own event loop.
+    - Each worker has `pool_size` sessions created on its loop via session_factory.
+    - session_factory is either provided or built from TLS/auth info.
+    - .call(fn, ...) picks a (worker, session) via round-robin, runs fn on that worker loop,
+        and binds .session/.loop through a ContextVar.
     """
+
     server: str
-    default_namespace: Optional[str]
+    default_namespace: str | None
 
     def __init__(self, info: ConnectionInfo, pool_size: int = 4, threads: int = 1,
-                 session_factory: Optional[Callable[[], Any]] = None) -> None:
-        self.server = info.cluster_info.server
+                 session_factory: Callable[[], Any] = None) -> None:
+        self.server = info.server_info.server
         self.default_namespace = info.default_namespace
 
-        tempfiles = _TempFiles()
+        rand_string = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
+        tempfiles = _TempFiles(f"_{rand_string}")
 
-        ca_path: Optional[str] = None
-        client_cert_path: Optional[str] = None
-        client_key_path: Optional[str] = None
+        ca_path = None
+        client_cert_path = None
+        client_key_path = None
 
-        ca_path_cfg = info.cluster_info.certificate_authority
-        ca_data_cfg = info.cluster_info.certificate_authority_data
+        ca_path_cfg = info.server_info.certificate_authority
+        ca_data_cfg = info.server_info.certificate_authority_data
         if ca_path_cfg and ca_data_cfg:
             raise LoginError("Both CA path and data are set. Need only one.")
         elif ca_path_cfg:
@@ -267,7 +244,7 @@ class APIContext:
         else:
             ssl_context = ssl.create_default_context(cafile=ca_path)
 
-        if info.cluster_info.insecure_skip_tls_verify:
+        if info.server_info.insecure_skip_tls_verify:
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
 
@@ -291,8 +268,9 @@ class APIContext:
         def default_factory():
             return aiohttp.ClientSession(
                 connector=aiohttp.TCPConnector(limit=0, ssl=ssl_context),
+                base_url=self.server,
                 headers=headers,
-                auth=auth,
+                auth=auth
             )
 
         self._session_factory: Callable[[], Any] = session_factory or default_factory
@@ -317,26 +295,66 @@ class APIContext:
         # Keep tempfiles for manual cleanup if needed
         self._tempfiles = tempfiles
 
+        # Per-task binding of (worker_idx, session_idx) for .session / .loop / .call
+        self._current_addr: ContextVar[tuple[int, int]] = ContextVar(f"api_ctx_addr_{id(self)}")
+
+
     def _choose_address(self) -> tuple[int, int]:
         with self._rr_lock:
             idx = self._rr_counter % len(self._address_book)
             self._rr_counter += 1
             return self._address_book[idx]
 
-    async def request(self, method: str, url: str, **kwargs: Any) -> Any:
-        if self._closed.is_set():
-            raise RuntimeError("APIContext is closed")
-        worker_idx, session_idx = self._choose_address()
-        future = self._workers[worker_idx].submit_request(session_idx, method, url, **kwargs)
-        return await asyncio.wrap_future(future)
+    @property
+    def session(self) -> Any:
+        """
+        Real aiohttp.ClientSession bound to this context call.
+
+        Must only be used from within a coroutine that is currently executing inside
+        APIContext.call(). Using it outside that will raise RuntimeError.
+        """
+        try:
+            worker_idx, session_idx = self._current_addr.get()
+        except LookupError:
+            raise RuntimeError("APIContext.session used outside APIContext.call()")
+        # Access the concrete session object on that worker
+        return self._workers[worker_idx]._sessions[session_idx]
 
     @property
-    def session(self) -> AiohttpSessionProxy:
+    def loop(self) -> asyncio.AbstractEventLoop:
         """
-        Return a proxy that forwards aiohttp-like requests into the worker pool.
-        The proxy is safe to use from any thread or event loop.
+        Event loop of the worker currently bound to this context call.
         """
-        return AiohttpSessionProxy(self)
+        try:
+            worker_idx, session_idx = self._current_addr.get()
+        except LookupError:
+            raise RuntimeError("APIContext.loop used outside APIContext.call()")
+        return self._workers[worker_idx].loop
+
+    async def call(self, fn: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any) -> Any:
+        """
+        Run user async function `fn` on one worker's loop with one specific session bound.
+
+        Inside `fn`, `_context` will be `self`, and `_context.session` / `_context.loop`
+        refer to the chosen worker+session.
+
+        This is what @authenticated should use to execute `fn` safely.
+        """
+        if self._closed.is_set():
+            raise RuntimeError("APIContext is closed")
+
+        worker_idx, session_idx = self._choose_address()
+        worker = self._workers[worker_idx]
+
+        async def _runner() -> Any:
+            token = self._current_addr.set((worker_idx, session_idx))
+            try:
+                return await fn(*args, **kwargs, _context=self)
+            finally:
+                self._current_addr.reset(token)
+
+        fut = asyncio.run_coroutine_threadsafe(_runner(), worker.loop)
+        return await asyncio.wrap_future(fut)
 
     @property
     def closed(self) -> bool:
@@ -348,6 +366,7 @@ class APIContext:
         self._closed.set()
         for w in self._workers:
             w.stop()
+        # tempfiles will be purged by _TempFiles.__del__
 
 
 class _TempFiles(Mapping[bytes, str]):
@@ -358,10 +377,13 @@ class _TempFiles(Mapping[bytes, str]):
     is garbage-collected when its parent `APISession` is garbage-collected or
     explicitly closed (by `Vault` on removal of corresponding credentials).
     """
+    _path_suffix: str
+    _paths: dict[bytes, str]
 
-    def __init__(self) -> None:
+    def __init__(self, path_suffix: str) -> None:
         super().__init__()
         self._paths: dict[bytes, str] = {}
+        self._path_suffix = path_suffix
 
     def __del__(self) -> None:
         self.purge()
@@ -374,7 +396,7 @@ class _TempFiles(Mapping[bytes, str]):
 
     def __getitem__(self, item: bytes) -> str:
         if item not in self._paths:
-            with tempfile.NamedTemporaryFile(delete=False) as f:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=self._path_suffix) as f:
                 f.write(item)
             self._paths[item] = f.name
         return self._paths[item]
@@ -386,3 +408,6 @@ class _TempFiles(Mapping[bytes, str]):
             except OSError:
                 pass  # already removed
         self._paths.clear()
+
+
+_auth_vault_var.set({})

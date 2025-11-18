@@ -1,3 +1,4 @@
+from typing import TypeVar
 from urllib.parse import urlsplit
 
 
@@ -35,3 +36,19 @@ def host_from_url(url: str, include_port: bool = True) -> str | None:
             return f'[{host}]:{parsed_u.port}'
         return f'{host}:{parsed_u.port}'
     return host
+
+
+_T = TypeVar("_T")
+
+
+def normalize_dict_keys(obj: _T) -> _T:
+    if isinstance(obj, dict):
+        return {
+            (key.replace('-', '_') if isinstance(key, str) else key): normalize_dict_keys(value)
+            for key, value in obj.items()
+        }
+    if isinstance(obj, list):
+        return [normalize_dict_keys(item) for item in obj]
+    if isinstance(obj, tuple):
+        return tuple(normalize_dict_keys(item) for item in obj)
+    return obj

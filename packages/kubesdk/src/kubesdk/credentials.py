@@ -48,11 +48,11 @@ class AccessError(Exception):
     
 
 @dataclass(frozen=True)
-class ClusterInfo:
+class ServerInfo:
     server: str  # url to k8s API endpoint
-    certificate_authority: Optional[str]
-    certificate_authority_data: Optional[str]
-    insecure_skip_tls_verify: Optional[bool]
+    certificate_authority: Optional[str] = field(default=None)
+    certificate_authority_data: Optional[str] = field(default=None)
+    insecure_skip_tls_verify: Optional[bool] = field(default=None)
     
     
 @dataclass(frozen=True)
@@ -72,7 +72,7 @@ class ConnectionInfo:
     """
     A single endpoint with specific credentials and connection flags to use.
     """
-    cluster_info: ClusterInfo
+    server_info: ServerInfo
     client_info: ClientInfo
     default_namespace: Optional[str] = field(default=None)
     priority: int = 0
@@ -120,6 +120,7 @@ class Vault(AsyncIterable[tuple[VaultKey, ConnectionInfo]]):
     .. seealso::
         :func:`auth.authenticated` and :func:`authentication`.
     """
+    _guard: asyncio.Condition
     _current: dict[VaultKey, VaultItem]
     _invalid: dict[VaultKey, list[VaultItem]]
 
@@ -169,13 +170,13 @@ class Vault(AsyncIterable[tuple[VaultKey, ConnectionInfo]]):
         """
         purpose = purpose if purpose is not None else repr(factory)
         async for key, item in self._items():
-            if item.caches is None:  # quick-check with no locking overhead.
+            if item.caches is None:  # Do quick-check with no locking overhead, first
                 async with self._guard:
-                    if item.caches is None:  # securely synchronised check.
+                    if item.caches is None:
                         item.caches = {}
-            if purpose not in item.caches:  # quick-check with no locking overhead.
+            if purpose not in item.caches:
                 async with self._guard:
-                    if purpose not in item.caches:  # securely synchronised check.
+                    if purpose not in item.caches:
                         item.caches[purpose] = factory(item.info)
             yield key, item.info, cast(_T, item.caches[purpose])
 

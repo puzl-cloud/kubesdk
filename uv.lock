@@ -695,6 +695,16 @@ name = "kube-models"
 version = "0.0.0"
 source = { editable = "packages/kube_models" }
 
+[package.dev-dependencies]
+test = [
+    { name = "coverage" },
+]
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+test = [{ name = "coverage" }]
+
 [[package]]
 name = "kubesdk"
 version = "0.0.0"
@@ -702,6 +712,7 @@ source = { editable = "packages/kubesdk" }
 dependencies = [
     { name = "aiohttp" },
     { name = "kube-models" },
+    { name = "pyyaml" },
 ]
 
 [package.optional-dependencies]
@@ -720,6 +731,7 @@ requires-dist = [
     { name = "aiohttp", specifier = "==3.12.15" },
     { name = "kube-models", editable = "packages/kube_models" },
     { name = "kubesdk-cli", marker = "extra == 'cli'", editable = "packages/kubesdk_cli" },
+    { name = "pyyaml", specifier = "==6.0.3" },
 ]
 provides-extras = ["cli"]
 
@@ -740,6 +752,11 @@ dependencies = [
     { name = "requests" },
 ]
 
+[package.dev-dependencies]
+test = [
+    { name = "coverage" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "datamodel-code-generator", extras = ["http"], specifier = "==0.35.0" },
@@ -747,6 +764,9 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.4,<3" },
     { name = "requests", specifier = "==2.32.5" },
 ]
+
+[package.metadata.requires-dev]
+test = [{ name = "coverage" }]
 
 [[package]]
 name = "markupsafe"
