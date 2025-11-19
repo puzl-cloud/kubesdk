@@ -38,6 +38,14 @@ def host_from_url(url: str, include_port: bool = True) -> str | None:
     return host
 
 
+def join_host_port(host: str, port: str | int) -> str:
+    template = "%s:%s"
+    host_requires_bracketing = ':' in host or '%' in host
+    if host_requires_bracketing:
+        template = "[%s]:%s"
+    return template % (host, port)
+
+
 _T = TypeVar("_T")
 
 

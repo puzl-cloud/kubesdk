@@ -9,7 +9,7 @@ from .common import normalize_dict_keys
 from .errors import *
 from .credentials import ConnectionInfo, ServerInfo, ClientInfo, Vault
 from .auth import _auth_vault_var, DEFAULT_VAULT_NAME
-from .common import host_from_url
+from .common import host_from_url, join_host_port
 
 
 _log = logging.getLogger(__name__)
@@ -95,7 +95,17 @@ def _connection_info_from_service_account() -> ConnectionInfo | None:
     root = "/var/run/secrets/kubernetes.io/serviceaccount"
     token_path, ns_path, ca_path = f"{root}/token", f"{root}/namespace", f"{root}/ca.crt"
     if not os.path.exists(token_path):
+        _log.debug(f"{token_path} path does not exist, can not load service account config")
         return None
+
+    host, port = os.getenv(SERVICE_HOST_ENV_NAME), os.getenv(SERVICE_PORT_ENV_NAME)
+    if not host:
+        _log.debug(f"{SERVICE_HOST_ENV_NAME} env is not set, can not load service account config")
+        return None
+    if not port:
+        _log.debug(f"{SERVICE_PORT_ENV_NAME} env is not set, can not load service account config")
+        return None
+
     with open(token_path, encoding="utf-8") as f:
         token = f.read().strip()
 
@@ -103,10 +113,9 @@ def _connection_info_from_service_account() -> ConnectionInfo | None:
     if os.path.exists(ns_path):
         with open(ns_path, encoding="utf-8") as f:
             namespace = f.read().strip()
-
     return ConnectionInfo(
         server_info=ServerInfo(
-            server="https://kubernetes.default.svc",
+            server=f"https://{join_host_port(host, port)}",
             certificate_authority=ca_path if os.path.exists(ca_path) else None),
         client_info=ClientInfo(token=token or None),
         default_namespace=namespace or None,
@@ -163,7 +172,8 @@ async def _sync_credentials(result: dict[str, ServerInfo], kubeconfig: KubeConfi
             vault = vaults.get(cluster_host)
             if vault is None:
                 vault = vaults[cluster_host] = Vault()
-                if use_as_default or use_as_default is None:
+                # Set the first config as default
+                if use_as_default or (use_as_default is None and DEFAULT_VAULT_NAME not in vaults):
                     vaults[DEFAULT_VAULT_NAME] = vault
 
             await vault.wait_for_emptiness()
