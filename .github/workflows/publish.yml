@@ -6,7 +6,7 @@ on:
       - main
 
 jobs:
-  run:
+  publish:
     runs-on: puzl-ubuntu-latest
     environment:
       name: puzl
@@ -26,9 +26,8 @@ jobs:
       #  run: uv publish
       - name: Publish package to private PyPI
         env:
-          TWINE_REPOSITORY: puzl
-          TWINE_REPOSITORY_URL: ${{ secrets.PYPI_SERVER_URL }}
-          TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
-          TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+          UV_PUBLISH_URL: ${{ secrets.PYPI_SERVER_URL }}
+          UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
         run: uv publish
         
