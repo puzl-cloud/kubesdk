@@ -23,7 +23,6 @@ else:
 
 
 import aiohttp
-from jsonpatch import JsonPatch
 
 from kube_models import get_model
 from kube_models.const import PatchRequestType
@@ -33,7 +32,7 @@ from kube_models.api_v1.io.k8s.apimachinery.pkg.apis.meta.v1 import DeleteOption
 from .auth import authenticated, APIContext
 from .errors import *
 from ._patch.strategic_merge_patch import jsonpatch_to_smp
-from ._patch.json_patch import guard_lists_from_json_patch_replacement
+from ._patch.json_patch import guard_lists_from_json_patch_replacement, json_patch_from_diff
 from .path_picker import PathPicker
 
 
@@ -540,7 +539,7 @@ async def update_k8s_resource(
         # If we have version to compare with, find the diff between them
         elif built_from_latest:
             old_dict, new_dict = built_from_latest.to_dict(), resource.to_dict()
-            json_patch = JsonPatch.from_diff(old_dict, new_dict).patch
+            json_patch = json_patch_from_diff(old_dict, new_dict)
             
             # Exclude all paths which are not white-listed
             if paths:

@@ -108,9 +108,9 @@ def get_k8s_resource_model(api_version: str, kind: str) -> Type[K8sResource] | N
     return None
 
 
-def get_k8s_resource_model_by_body(body: Dict) -> Type[LazyLoadModel]:
+def get_model_by_body(body: Dict) -> Type[LazyLoadModel]:
     api_version, kind = body.get("apiVersion"), body.get("kind")
     return get_model(api_version, kind)
 
 
-__all__ = ["get_k8s_resource_model", "get_k8s_resource_model_by_body", "K8sResource", "K8sResourceList"]
+__all__ = ["get_k8s_resource_model", "get_model", "get_model_by_body", "K8sResource", "K8sResourceList"]
