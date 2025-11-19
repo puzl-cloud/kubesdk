@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kubesdk-cli"
-version = "0.0.0"
+version = "0.0.1"
 requires-python = ">=3.10"
 description = "Kubernetes API models and CRD generator"
 readme = "README.md"
