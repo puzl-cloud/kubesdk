@@ -3,13 +3,13 @@ name: "Release"
 on:
   push:
     branches:
-      - release
+      - main
 
 jobs:
   run:
     runs-on: puzl-ubuntu-latest
     environment:
-      name: pypi
+      name: puzl
     permissions:
       id-token: write
       contents: read
@@ -22,5 +22,13 @@ jobs:
         uses: ./.github/actions/setup-uv
       - name: Build
         run: uv build --all-packages
-      - name: Publish
+      #- name: Publish
+      #  run: uv publish
+      - name: Publish package to private PyPI
+        env:
+          TWINE_REPOSITORY: puzl
+          TWINE_REPOSITORY_URL: ${{ secrets.PYPI_SERVER_URL }}
+          TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
         run: uv publish
+        
