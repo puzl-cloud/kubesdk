@@ -31,6 +31,6 @@ jobs:
           UV_PUBLISH_URL: ${{ secrets.PYPI_SERVER_URL }}
           UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
           UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
-          UV_PUBLISH_CHECK_URL: ${{ secrets.PYPI_SERVER_URL }}/simple
+          UV_PUBLISH_CHECK_URL: ${{ secrets.PUBLISH_CHECK_URL }}
         run: uv publish --verbose
         
