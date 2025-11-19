@@ -23,7 +23,7 @@ KUBECONFIG_DEFAULT_CONTEXT = "default"
 @dataclass(kw_only=True, frozen=True)
 class KubeConfig:
     # We separate default-config and no-config cases. We load current context if context_name is None.
-    context_name: str = field(default=KUBECONFIG_DEFAULT_CONTEXT)
+    context_name: str = field(default=None)
     path: str = field(default=KUBE_CONFIG_DEFAULT_LOCATION)
 
 
@@ -119,13 +119,12 @@ def _collect_connection_info(kubeconfig: KubeConfig = None) -> ConnectionInfo:
     if sa_connection_info and not kubeconfig:
         return sa_connection_info
 
-    # Try to use default config, if not passed
-    kubeconfig = kubeconfig or KubeConfig()
     try:
-        return _connection_info_from_kube_config(kubeconfig)
+        # Try to use default config, if not passed
+        return _connection_info_from_kube_config(kubeconfig or KubeConfig())
     except LoginError:
-        # If context_name passed, it's required to use kubeconfig flow
-        if kubeconfig.context_name or not sa_connection_info:
+        # If kubeconfig passed, it's required to use kubeconfig flow
+        if kubeconfig or not sa_connection_info:
             raise
         return sa_connection_info
 
