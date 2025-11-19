@@ -36,7 +36,7 @@ import random
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from collections.abc import AsyncIterable, AsyncIterator, Mapping
-from typing import Callable, NewType, Optional, TypeVar, cast
+from typing import Callable, NewType, TypeVar, cast
 
 
 class LoginError(Exception):
@@ -50,21 +50,21 @@ class AccessError(Exception):
 @dataclass(frozen=True)
 class ServerInfo:
     server: str  # url to k8s API endpoint
-    certificate_authority: Optional[str] = field(default=None)
-    certificate_authority_data: Optional[str] = field(default=None)
-    insecure_skip_tls_verify: Optional[bool] = field(default=None)
+    certificate_authority: str = field(default=None)
+    certificate_authority_data: str = field(default=None)
+    insecure_skip_tls_verify: bool = field(default=False)
     
     
 @dataclass(frozen=True)
 class ClientInfo:
-    client_certificate: Optional[str] = field(default=None)  # path to the cert
-    client_certificate_data: Optional[bytes] = field(default=None)
-    client_key: Optional[str] = field(default=None)  # path to the key
-    client_key_data: Optional[bytes] = field(default=None)
-    username: Optional[str] = field(default=None)
-    password: Optional[str] = field(default=None)
-    token: Optional[str] = field(default=None)
-    scheme: Optional[str] = field(default=None)  # RFC-7235/5.1: e.g. Bearer, Basic, Digest, etc.
+    client_certificate: str = field(default=None)  # path to the cert
+    client_certificate_data: bytes = field(default=None)
+    client_key: str = field(default=None)  # path to the key
+    client_key_data: bytes = field(default=None)
+    username: str = field(default=None)
+    password: str = field(default=None)
+    token: str = field(default=None)
+    scheme: str = field(default=None)  # RFC-7235/5.1: e.g. Bearer, Basic, Digest, etc.
 
 
 @dataclass(frozen=True)
@@ -74,9 +74,10 @@ class ConnectionInfo:
     """
     server_info: ServerInfo
     client_info: ClientInfo
-    default_namespace: Optional[str] = field(default=None)
+    default_namespace: str = field(default=None)
     priority: int = 0
-    expiration: Optional[datetime] = field(default=None)
+    expiration: datetime = field(default=None)
+    kubeconfig_context_name: str = field(default=None)
 
 
 _T = TypeVar('_T', bound=object)
@@ -94,7 +95,7 @@ class VaultItem:
     The caches are populated by `Vault.extended` on-demand.
     """
     info: ConnectionInfo
-    caches: Optional[dict[str, object]] = None
+    caches: dict[str, object] | None = None
 
 
 class Vault(AsyncIterable[tuple[VaultKey, ConnectionInfo]]):
@@ -124,14 +125,11 @@ class Vault(AsyncIterable[tuple[VaultKey, ConnectionInfo]]):
     _current: dict[VaultKey, VaultItem]
     _invalid: dict[VaultKey, list[VaultItem]]
 
-    def __init__(
-            self,
-            __src: Optional[Mapping[str, ConnectionInfo]] = None,
-    ) -> None:
+    def __init__(self, __src: Mapping[str, ConnectionInfo] = None) -> None:
         super().__init__()
         self._current = {}
         self._invalid = collections.defaultdict(list)
-        self._next_expiration: Optional[datetime] = None
+        self._next_expiration: datetime | None = None
 
         if __src is not None:
             self._update_converted(__src)
@@ -156,7 +154,7 @@ class Vault(AsyncIterable[tuple[VaultKey, ConnectionInfo]]):
     async def extended(
             self,
             factory: Callable[[ConnectionInfo], _T],
-            purpose: Optional[str] = None,
+            purpose: str | None = None,
     ) -> AsyncIterator[tuple[VaultKey, ConnectionInfo, _T]]:
         """
         Iterate the connection info items with their cached object.
@@ -266,13 +264,7 @@ class Vault(AsyncIterable[tuple[VaultKey, ConnectionInfo]]):
             self._guard.notify_all()
             await self._guard.wait_for(lambda: self._ready)
 
-    async def invalidate(
-            self,
-            key: VaultKey,
-            info: ConnectionInfo,
-            *,
-            exc: Optional[Exception] = None,
-    ) -> None:
+    async def invalidate(self, key: VaultKey, info: ConnectionInfo, *, exc: Exception = None) -> None:
         """
         Discard the specified credentials, and re-authenticate as needed.
 

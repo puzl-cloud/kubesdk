@@ -21,7 +21,6 @@ else:
         HEAD = "HEAD"
         OPTIONS = "OPTIONS"
 
-
 import aiohttp
 
 from kube_models import get_model
@@ -34,6 +33,9 @@ from .errors import *
 from ._patch.strategic_merge_patch import jsonpatch_to_smp
 from ._patch.json_patch import guard_lists_from_json_patch_replacement, json_patch_from_diff
 from .path_picker import PathPicker
+
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(kw_only=True, frozen=True)
@@ -97,7 +99,7 @@ async def rest_api_request(
         "method": method,
         "request": data if log.request_body else None
     }
-    logging.debug(f"Requesting {api_name} API", extra=extra_log)
+    _log.debug(f"Requesting {api_name} API", extra=extra_log)
     attempt = 0
 
     while attempt < max_attempts:
@@ -127,14 +129,14 @@ async def rest_api_request(
                     "response": response_data if log.should_log_response(response_data) else None
                 }
                 if not is_json:
-                    logging.error(f"Received non-JSON response from {api_name} API", extra=extra_log)
+                    _log.error(f"Received non-JSON response from {api_name} API", extra=extra_log)
                     response_data = {"data": response_data}
 
                 # Check if we have to retry forcibly
                 exc_cls = ERROR_TYPE_BY_CODE.get(response.status) or RESTAPIError
                 if response.status in processing.retry_codes:
                     if attempt < max_attempts:
-                        logging.info(f"Retrying request due to {response.status} response status", extra=extra_log)
+                        _log.debug(f"Retrying request due to {response.status} response status", extra=extra_log)
                         await asyncio.sleep(processing.backoff_interval)
                         continue
                     raise exc_cls(response.status, f"{error_msg}, max_attempts={max_attempts} reached", response_data)
@@ -144,26 +146,29 @@ async def rest_api_request(
                     api_error = exc_cls(response.status, error_msg, response_data)
                     extra_log["error"] = str(api_error.status)
                     if response.status not in log.not_error_codes:
-                        logging.error(error_msg, extra=extra_log)
+                        _log_level = _log.error
+                    elif log.on_success:
+                        _log_level = _log.info
                     else:
-                        logging.info(error_msg, extra=extra_log)
+                        _log_level = _log.debug
+                    _log_level(error_msg, extra=extra_log)
                     if response.status in return_api_exceptions:
                         return api_error
                     raise api_error
 
                 if log.on_success:
-                    logging.info(success_msg, extra=extra_log)
+                    _log.info(success_msg, extra=extra_log)
                 else:
-                    logging.debug(success_msg, extra=extra_log | {"response": response_data})
+                    _log.debug(success_msg, extra=extra_log | {"response": response_data})
                 break
         except asyncio.TimeoutError as exc:
             msg = f"API request failed by {request_timeout}sec timeout"
             msg = f"{msg}. Will be retried." if attempt < max_attempts else msg
-            logging.error(msg, extra=extra_log | {"error": str(exc), "attempt": attempt})
+            _log.error(msg, extra=extra_log | {"error": str(exc), "attempt": attempt})
             if attempt >= max_attempts:
                 raise
         except aiohttp.ClientConnectorError as exc:
-            logging.error("API request failed", extra=extra_log | {"error": str(exc), "attempt": attempt})
+            _log.error("API request failed", extra=extra_log | {"error": str(exc), "attempt": attempt})
             raise RuntimeError(f"{api_name} API connection has been broken unexpectedly.")
 
     return response_data
@@ -207,13 +212,13 @@ def __decode_k8s_api_response(response: list | dict | RESTAPIError):
             try:
                 response.extra = Status.from_dict(response.response)
             except Exception as e:
-                logging.critical(
+                _log.critical(
                     f"K8s API error response does not match {Status.apiVersion} {Status.kind}. {empty_status_err} "
                     f"Check the version of your k8s models ASAP!",
                     extra={"error": str(e), "response": str(response.response)})
                 response.extra = Status()
         else:
-            logging.error(f"Got k8s API error with not a valid json. {empty_status_err}",
+            _log.error(f"Got k8s API error with not a valid json. {empty_status_err}",
                           extra={"response": str(response.response)})
             response.extra = Status()
         return response
@@ -315,7 +320,7 @@ async def get_k8s_resource(
         return __decode_k8s_api_response(response)
     except Exception as e:
         if log.errors_as_critical or isinstance(e, TypeError):
-            logging.critical(f"Error happened while attempting to {method} resource {resource.apiVersion}: {e}")
+            _log.critical(f"Error happened while attempting to {method} resource {resource.apiVersion}: {e}")
         if isinstance(e, RESTAPIError):
             raise __decode_k8s_api_response(e)
         raise
@@ -382,7 +387,7 @@ async def create_k8s_resource(
 
         except Exception as e:
             if log.errors_as_critical or isinstance(e, TypeError):
-                logging.critical(f"Error happened while attempting to {method} resource {resource.apiVersion}: {e}")
+                _log.critical(f"Error happened while attempting to {method} resource {resource.apiVersion}: {e}")
             if isinstance(e, RESTAPIError):
                 raise __decode_k8s_api_response(e)
             raise
@@ -578,7 +583,7 @@ async def update_k8s_resource(
             request_data = resource.to_dict()
 
         if not request_data:
-            logging.warning(
+            _log.warning(
                 f"Got empty request_data after patch evaluation. Update hasn't been sent to cluster.",
                 extra={"paths": paths, "force": force, "latest_version_passed": bool(built_from_latest)})
             return resource
@@ -601,7 +606,7 @@ async def update_k8s_resource(
 
     except Exception as e:
         if log.errors_as_critical or isinstance(e, TypeError):
-            logging.critical(f"Error happened while attempting to {method} resource {resource.apiVersion}: {e}")
+            _log.critical(f"Error happened while attempting to {method} resource {resource.apiVersion}: {e}")
         if isinstance(e, RESTAPIError):
             raise __decode_k8s_api_response(e)
         raise
@@ -691,7 +696,7 @@ async def delete_k8s_resource(
         return __decode_k8s_api_response(response)
     except Exception as e:
         if log.errors_as_critical or isinstance(e, TypeError):
-            logging.critical(f"Error happened while attempting to {method} resource {resource.apiVersion}: {e}")
+            _log.critical(f"Error happened while attempting to {method} resource {resource.apiVersion}: {e}")
         if isinstance(e, RESTAPIError):
             raise __decode_k8s_api_response(e)
         raise

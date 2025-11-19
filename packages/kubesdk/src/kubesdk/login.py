@@ -23,7 +23,7 @@ KUBECONFIG_DEFAULT_CONTEXT = "default"
 @dataclass(kw_only=True, frozen=True)
 class KubeConfig:
     # We separate default-config and no-config cases. We load current context if context_name is None.
-    context_name: str | None = field(default=None)
+    context_name: str = field(default=KUBECONFIG_DEFAULT_CONTEXT)
     path: str = field(default=KUBE_CONFIG_DEFAULT_LOCATION)
 
 
@@ -56,16 +56,17 @@ def _connection_info_from_kube_config(kubeconfig: KubeConfig) -> ConnectionInfo 
     if kubeconfig.context_name:
         if kubeconfig.context_name not in contexts:
             raise LoginError(f"Context with name `{kubeconfig.context_name}` is not found in kubeconfig")
-        context = contexts[kubeconfig.context_name]
+        use_context_name = kubeconfig.context_name
     elif current_context:
-        context = contexts[current_context]
+        use_context_name = current_context
     elif KUBECONFIG_DEFAULT_CONTEXT in contexts:
-        context = contexts[KUBECONFIG_DEFAULT_CONTEXT]
+        use_context_name = KUBECONFIG_DEFAULT_CONTEXT
     else:
         raise LoginError(
             "`current-context` key is not set in kubeconfig, and no `default` context was found. "
             "You should fix your kubeconfig file or provide valid `kubeconfig` argument to login function.")
 
+    context = contexts[use_context_name]
     cluster = clusters[context["cluster"]]
     user = users[context["user"]]
     provider_token = ((user.get("auth-provider") or {}).get("config") or {}).get("access-token")
@@ -84,7 +85,8 @@ def _connection_info_from_kube_config(kubeconfig: KubeConfig) -> ConnectionInfo 
         }),
         client_info=ClientInfo(**client_info),
         default_namespace=normalized_cluster_data.get("default_namespace"),
-        priority=10
+        priority=10,
+        kubeconfig_context_name=use_context_name
     )
 
 
@@ -112,11 +114,13 @@ def _connection_info_from_service_account() -> ConnectionInfo | None:
     )
 
 
-def _collect_connection_info(kubeconfig: KubeConfig) -> ConnectionInfo:
+def _collect_connection_info(kubeconfig: KubeConfig = None) -> ConnectionInfo:
     sa_connection_info = _connection_info_from_service_account()
-    if sa_connection_info and not kubeconfig.context_name:
+    if sa_connection_info and not kubeconfig:
         return sa_connection_info
 
+    # Try to use default config, if not passed
+    kubeconfig = kubeconfig or KubeConfig()
     try:
         return _connection_info_from_kube_config(kubeconfig)
     except LoginError:
@@ -126,7 +130,7 @@ def _collect_connection_info(kubeconfig: KubeConfig) -> ConnectionInfo:
         return sa_connection_info
 
 
-async def _sync_credentials(result: dict[str, ServerInfo], kubeconfig: KubeConfig, use_as_default: bool = None):
+async def _sync_credentials(result: dict[str, ServerInfo], kubeconfig: KubeConfig = None, use_as_default: bool = None):
     """
     Keeping the credentials forever up to date
     """
@@ -140,8 +144,8 @@ async def _sync_credentials(result: dict[str, ServerInfo], kubeconfig: KubeConfi
     vaults = _auth_vault_var.get()
     backoff_timeout = 10
     if use_as_default and DEFAULT_VAULT_NAME in vaults:
-        _log.warning(f"The default cluster is already defined. Check that you don't have undesired duplicated login() "
-                     f"calls. `use_as_default` setting was ignored for login under `{kubeconfig.context_name}` context.")
+        _log.warning(f"The default Kubernetes server is already defined. Check that you don't have undesired "
+                     f"duplicated login() calls. `use_as_default` setting was ignored.")
         use_as_default = False
 
     # Check that vault does not exist for this server yet before falling into the loop
@@ -164,13 +168,14 @@ async def _sync_credentials(result: dict[str, ServerInfo], kubeconfig: KubeConfi
                     vaults[DEFAULT_VAULT_NAME] = vault
 
             await vault.wait_for_emptiness()
-            await vault.populate({kubeconfig.context_name: connection_info})
+            await vault.populate({connection_info.kubeconfig_context_name or "ServiceAccount": connection_info})
             account = await whoami()
             result["info"] = connection_info.server_info
             _log.info(f"kubesdk client for `{cluster_host}` is running under `{account}` account")
         except Exception as e:
-            _log.error(f"Syncing `{kubeconfig.context_name}` Kubernetes credential context failed and will be retried "
-                       f"in {backoff_timeout} seconds. Unexpected error: {e}")
+            _log.error(
+                f"Syncing `{kubeconfig.context_name if kubeconfig else KUBECONFIG_DEFAULT_CONTEXT}` Kubernetes credential "
+                f"context failed and will be retried in {backoff_timeout} seconds. Unexpected error: {e}")
             await asyncio.sleep(backoff_timeout)
 
 
