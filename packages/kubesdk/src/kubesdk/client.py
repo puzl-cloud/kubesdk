@@ -38,7 +38,7 @@ from .path_picker import PathPicker
 
 @dataclass(kw_only=True, frozen=True)
 class APIRequestProcessingConfig:
-    http_timeout: int = field(default=15)
+    http_timeout: int = field(default=30)
     backoff_limit: int = field(default=3)
     backoff_interval: int | Callable = field(default=5)
     retry_codes: Sequence[int] = field(default_factory=list)
@@ -99,8 +99,9 @@ async def rest_api_request(
     }
     logging.debug(f"Requesting {api_name} API", extra=extra_log)
     attempt = 0
-    try:
-        while attempt < max_attempts:
+
+    while attempt < max_attempts:
+        try:
             attempt += 1
             async with _context.session.request(
                     method,
@@ -155,9 +156,15 @@ async def rest_api_request(
                 else:
                     logging.debug(success_msg, extra=extra_log | {"response": response_data})
                 break
-    except aiohttp.ClientConnectorError as exc:
-        logging.error("API request failed", extra=extra_log | {"error": str(exc), "attempt": attempt})
-        raise RuntimeError(f"{api_name} API connection has been broken unexpectedly.")
+        except asyncio.TimeoutError as exc:
+            msg = f"API request failed by {request_timeout}sec timeout"
+            msg = f"{msg}. Will be retried." if attempt < max_attempts else msg
+            logging.error(msg, extra=extra_log | {"error": str(exc), "attempt": attempt})
+            if attempt >= max_attempts:
+                raise
+        except aiohttp.ClientConnectorError as exc:
+            logging.error("API request failed", extra=extra_log | {"error": str(exc), "attempt": attempt})
+            raise RuntimeError(f"{api_name} API connection has been broken unexpectedly.")
 
     return response_data
 

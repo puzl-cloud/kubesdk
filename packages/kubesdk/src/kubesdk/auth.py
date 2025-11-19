@@ -268,6 +268,7 @@ class APIContext:
         def default_factory():
             return aiohttp.ClientSession(
                 connector=aiohttp.TCPConnector(limit=0, ssl=ssl_context),
+                timeout=aiohttp.ClientTimeout(total=60),
                 base_url=self.server,
                 headers=headers,
                 auth=auth
