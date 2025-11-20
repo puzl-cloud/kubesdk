@@ -190,7 +190,7 @@ async def _sync_credentials(result: dict[str, ServerInfo], kubeconfig: KubeConfi
 
 async def login(kubeconfig: KubeConfig = None, use_as_default: bool = None) -> ServerInfo:
     server_info: dict[str, ServerInfo] = {}
-    asyncio.create_task(_sync_credentials(server_info, kubeconfig or KubeConfig(), use_as_default))
+    asyncio.create_task(_sync_credentials(server_info, kubeconfig, use_as_default))
 
     # Was too lazy to wait this better
     timer = 0
