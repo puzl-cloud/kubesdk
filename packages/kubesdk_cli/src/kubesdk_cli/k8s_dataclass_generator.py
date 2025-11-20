@@ -164,7 +164,6 @@ def write_inits_with_type_loader(base_dir: str | Path, extra_globals: List[str] 
 
         # Build final content
         double_line = "\n\n"
-        timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         content = f"""{GENERATED_HEADER}\
 {loader_import}\n
 {imports_block}\n\n

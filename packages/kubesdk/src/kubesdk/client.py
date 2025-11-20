@@ -162,7 +162,7 @@ async def rest_api_request(
                     _log.debug(success_msg, extra=extra_log | {"response": response_data})
                 break
         except asyncio.TimeoutError as exc:
-            msg = f"API request failed by {request_timeout}sec timeout"
+            msg = f"API request failed by {request_timeout.total}sec timeout"
             msg = f"{msg}. Will be retried." if attempt < max_attempts else msg
             _log.error(msg, extra=extra_log | {"error": str(exc), "attempt": attempt})
             if attempt >= max_attempts:
