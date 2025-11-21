@@ -27,6 +27,8 @@ from .credentials import Vault, ConnectionInfo, LoginError
 
 T = TypeVar("T")
 DEFAULT_VAULT_NAME = "default"
+POOL_SIZE = int(os.getenv("KUBESDK_CLIENT_POOL_SIZE", 4))
+THREADS = int(os.getenv("KUBESDK_CLIENT_THREADS", 1))
 
 
 class GlobalContextVar(Generic[T]):
@@ -197,7 +199,7 @@ class APIContext:
     server: str
     default_namespace: str | None
 
-    def __init__(self, info: ConnectionInfo, pool_size: int = 4, threads: int = 1,
+    def __init__(self, info: ConnectionInfo, pool_size: int = POOL_SIZE, threads: int = THREADS,
                  session_factory: Callable[[], Any] = None) -> None:
         self.server = info.server_info.server
         self.default_namespace = info.default_namespace
