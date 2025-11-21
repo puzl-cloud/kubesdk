@@ -567,7 +567,8 @@ class OpenAPIK8sParser(OpenAPIParser):
 
                 # Build supported K8sResource update strategies from PATCH queries
                 elif meta.method == "patch":
-                    media_types = meta.op.requestBody.content.keys()
+                    media_types = list(meta.op.requestBody.content.keys())
+                    media_types.sort()
                     for m in media_types:
                         try:
                             PatchRequestType(m)
