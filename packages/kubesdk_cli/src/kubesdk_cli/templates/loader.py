@@ -372,7 +372,7 @@ def _to_immutable(v: Any) -> Any:
         return repr(v)
 
 
-@dataclass(slots=True, kw_only=True, frozen=True)
+@dataclass(kw_only=True, frozen=True)
 class LazyLoadModel:
     """
     This model supports lazy loading of complex nested types avoiding unnecessary heavy recursions in @loader.

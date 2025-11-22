@@ -8,7 +8,7 @@ from ._k8s_resource_base import K8sResource, loader, ListMeta, _bind_class_vars_
 
 
 @loader
-@dataclass(slots=True, kw_only=True, frozen=True)
+@dataclass(kw_only=True, frozen=True)
 class K8sResourceList[ResourceT: K8sResource](K8sResource):
     items: List[ResourceT]
     metadata: ListMeta = field(default_factory=ListMeta)
