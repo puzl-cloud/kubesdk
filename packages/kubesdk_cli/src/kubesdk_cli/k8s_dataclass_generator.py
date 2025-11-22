@@ -8,7 +8,6 @@ import json
 from pathlib import Path
 import shutil
 from datetime import datetime, timezone
-from typing import Dict, List, Tuple, Set
 from urllib.parse import urlparse
 
 from datamodel_code_generator import DataModelType, PythonVersion, LiteralType, OpenAPIScope
@@ -22,7 +21,7 @@ from kubesdk_cli.const import *
 logging.basicConfig(level=logging.DEBUG, force=True, handlers=[logging.StreamHandler(sys.stdout)])
 
 
-def _parse_exports_and_dataclasses(py_path: Path) -> Tuple[Set[str], Set[str]]:
+def _parse_exports_and_dataclasses(py_path: Path) -> tuple[set[str], set[str]]:
     """
     Returns (exports, dataclasses) for a module file:
       - exports: __all__ if present (literal list/tuple of strings), else public top-level names
@@ -31,9 +30,9 @@ def _parse_exports_and_dataclasses(py_path: Path) -> Tuple[Set[str], Set[str]]:
     src = py_path.read_text(encoding="utf-8")
     tree = ast.parse(src, filename=str(py_path))
 
-    explicit_all: Set[str] | None = None
-    public: Set[str] = set()
-    dataclasses: Set[str] = set()
+    explicit_all: set[str] | None = None
+    public: set[str] = set()
+    dataclasses: set[str] = set()
 
     # Fallback public names (no __all__): classes, funcs, assignments not starting with "_"
     for node in tree.body:
@@ -83,7 +82,7 @@ def _parse_exports_and_dataclasses(py_path: Path) -> Tuple[Set[str], Set[str]]:
     return set(exports), dataclasses
 
 
-def write_inits_with_type_loader(base_dir: str | Path, extra_globals: List[str] = None) -> None:
+def write_inits_with_type_loader(base_dir: str | Path, extra_globals: list[str] = None) -> None:
     """
     Generate __init__.py files that:
       • do explicit imports `from .mod import A, B, ...`
@@ -287,7 +286,7 @@ def copy_file(src: Path, dst_dir: Path, new_name: str = None) -> Path:
 
 async def generate_for_schema(
         output: Path, python_version: PythonVersion, templates: Path, module_name: str,
-        from_file: Path = None, url: str = None, http_headers: Dict[str, str] = None):
+        from_file: Path = None, url: str = None, http_headers: dict[str, str] = None):
     input_ = urlparse(url) if url else from_file
     try:
         assert input_, "You must pass from_file path or OpenAPI schema url"
@@ -326,6 +325,9 @@ async def generate_for_schema(
             keyword_only=True,
             frozen_dataclasses=True,
 
+            # We do this to generate sets from ordered lists for code consistency
+            use_unique_items_as_set=True,
+
             # FixMe: We should use reuse_model, but it's bugged for now:
             #  apis/controlplane.cluster.x-k8s.io/v1beta1: list object has no element 0
             reuse_model=False,
@@ -342,7 +344,7 @@ async def generate_for_schema(
 
 async def generate_dataclasses_from_url(
         cluster_url: str, output: Path, templates: Path, module_name: str,
-        python_version: PythonVersion = PythonVersion.PY_310, http_headers: Dict[str, str] = None) -> None:
+        python_version: PythonVersion = PythonVersion.PY_310, http_headers: dict[str, str] = None) -> None:
     """
     Iterate a downloader manifest (label -> {file, source_url}) and run codegen per URL.
     Each label gets its own subpackage under output dir.
@@ -369,11 +371,11 @@ async def generate_dataclasses_from_url(
     # ToDo: Add k8s versioning to understand the range of compatible Kubernetes APIs for each model
 
 
-def read_all_json_files(from_dir: Path | str, recursive: bool = True) -> Dict[str, Dict]:
+def read_all_json_files(from_dir: Path | str, recursive: bool = True) -> dict[str, dict]:
     pattern = "**/*.json" if recursive else "*.json"
     return {f.name: json.loads(f.read_text(encoding="utf-8")) for f in Path(from_dir).glob(pattern) if f.is_file()}
 
-    
+
 async def generate_dataclasses_from_dir(
         from_dir: Path, output: Path, templates: Path, module_name: str,
         python_version: PythonVersion = PythonVersion.PY_310) -> None:
@@ -406,7 +408,7 @@ async def generate_dataclasses_from_dir(
     # ToDo: Add k8s versioning to understand the range of compatible Kubernetes APIs for each model
 
 
-def prepare_module(module_path: Path, templates: Path, extra_globals: List[str] = None):
+def prepare_module(module_path: Path, templates: Path, extra_globals: list[str] = None):
     extra_globals = extra_globals or []
     module_path.mkdir(parents=True, exist_ok=True)
     for file in extra_globals:

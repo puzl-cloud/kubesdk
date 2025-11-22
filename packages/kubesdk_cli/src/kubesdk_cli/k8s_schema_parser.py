@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import contextlib
 import copy
 import logging
@@ -10,7 +11,7 @@ from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Callable, Final, TextIO, TypeVar, cast, Dict, ClassVar, List
+from typing import IO, TYPE_CHECKING, Any, Callable, Final, TextIO, TypeVar, cast, Dict, ClassVar, List, Generic
 from urllib.parse import ParseResult
 
 import yaml
@@ -41,6 +42,20 @@ from kubesdk_cli.const import *
 
 
 class EmptyComponents(Exception): ...
+
+
+_T = TypeVar("_T")
+
+
+class _SortedSet(builtins.set, Generic[_T]):
+    """Mocked set to have deterministic ordered output"""
+    def __iter__(self): return iter(sorted(builtins.set.__iter__(self)))
+
+    def __repr__(self):
+        # deterministic, set-like repr
+        if not self:
+            return "set()"
+        return "{" + ", ".join(repr(x) for x in self) + "}"
 
 
 class InputFileType(Enum):
@@ -567,8 +582,7 @@ class OpenAPIK8sParser(OpenAPIParser):
 
                 # Build supported K8sResource update strategies from PATCH queries
                 elif meta.method == "patch":
-                    media_types = list(meta.op.requestBody.content.keys())
-                    media_types.sort()
+                    media_types = meta.op.requestBody.content.keys()
                     for m in media_types:
                         try:
                             PatchRequestType(m)
@@ -577,11 +591,11 @@ class OpenAPIK8sParser(OpenAPIParser):
                                             f"You must update your PatchRequestType enum spec!")
 
                     patch_strategies = {media for media in media_types}
-                    fields_to_add |= {patch_strategies_f_name: patch_strategies}
+                    fields_to_add |= {patch_strategies_f_name: _SortedSet(patch_strategies)}
 
                     # FixMe: Generator can't render enum values properly, so we render them as strings,
                     #  which makes IDE's typechecker puke
-                    field_types |= {patch_strategies_f_name: "ClassVar[Set[PatchRequestType]]"}
+                    field_types |= {patch_strategies_f_name: "ClassVar[set[PatchRequestType]]"}
                     patch_collected = True
 
                 # Skip everything else
@@ -590,15 +604,6 @@ class OpenAPIK8sParser(OpenAPIParser):
 
                 if patch_collected:
                     break
-
-            # Forcibly exclude patch options from sub-resources. They can be used in both native resources and CRDs,
-            # so we could break the client with strategic merge, for example.
-            # Better not to set patch_strategies_ for sub-resources at all.
-            # if not is_k8s_resource:
-            #     if patch_strategies_f_name in fields_to_add:
-            #         del fields_to_add[patch_strategies_f_name]
-            #         del field_types[patch_strategies_f_name]
-            #
 
             # K8sResource is the resource which can be created via POST request
             if not is_k8s_resource:
