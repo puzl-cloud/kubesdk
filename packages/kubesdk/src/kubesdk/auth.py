@@ -196,6 +196,8 @@ class APIContext:
         and binds .session/.loop through a ContextVar.
     """
 
+    threads: int
+    pool_size: int
     server: str
     default_namespace: str | None
 
@@ -203,6 +205,8 @@ class APIContext:
                  session_factory: Callable[[], Any] = None) -> None:
         self.server = info.server_info.server
         self.default_namespace = info.default_namespace
+        self.pool_size = pool_size
+        self.threads = threads
 
         rand_string = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
         tempfiles = _TempFiles(f"_{rand_string}")
@@ -287,9 +291,9 @@ class APIContext:
 
         # Build a flat address list of all sessions
         self._address_book: list[tuple[int, int]] = []
-        for w in range(self._num_workers):
-            for s in range(self._sessions_per_worker):
-                self._address_book.append((w, s))
+        for worker in range(self._num_workers):
+            for session in range(self._sessions_per_worker):
+                self._address_book.append((worker, session))
 
         self._rr_lock = threading.Lock()
         self._rr_counter = 0
@@ -301,11 +305,15 @@ class APIContext:
         # Per-task binding of (worker_idx, session_idx) for .session / .loop / .call
         self._current_addr: ContextVar[tuple[int, int]] = ContextVar(f"api_ctx_addr_{id(self)}")
 
-
     def _choose_address(self) -> tuple[int, int]:
         with self._rr_lock:
-            idx = self._rr_counter % len(self._address_book)
-            self._rr_counter += 1
+            size = len(self._address_book)
+            if size == 0:
+                raise RuntimeError("APIContext session address book is empty")
+
+            # Normalized round-robin counter
+            idx = self._rr_counter % size
+            self._rr_counter = (idx + 1) % size
             return self._address_book[idx]
 
     @property
@@ -341,9 +349,9 @@ class APIContext:
         Inside `fn`, `_context` will be `self`, and `_context.session` / `_context.loop`
         refer to the chosen worker+session.
 
-        This is what @authenticated should use to execute `fn` safely.
+        This is what any consumer (e.g. @authenticated) should use to execute `fn` safely.
         """
-        if self._closed.is_set():
+        if self.closed:
             raise RuntimeError("APIContext is closed")
 
         worker_idx, session_idx = self._choose_address()
@@ -364,7 +372,7 @@ class APIContext:
         return self._closed.is_set()
 
     async def close(self) -> None:
-        if self._closed.is_set():
+        if self.closed:
             return
         self._closed.set()
         for w in self._workers:
@@ -413,4 +421,4 @@ class _TempFiles(Mapping[bytes, str]):
         self._paths.clear()
 
 
-_auth_vault_var.set({})
+_auth_vault_var.set(dict())
