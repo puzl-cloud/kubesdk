@@ -200,7 +200,7 @@ _DYNAMIC_CLASS_VARS = ["apiVersion", "kind"]
 
 
 @loader
-@dataclass(kw_only=True, frozen=True)
+@dataclass(slots=True, kw_only=True, frozen=True)
 class K8sResource(LazyLoadModel):
     apiVersion: ClassVar[str]
     kind: ClassVar[str]
@@ -215,7 +215,9 @@ class K8sResource(LazyLoadModel):
     
     @classmethod
     def from_dict(cls, src: Dict[str, Any], lazy: bool = True) -> Self:
-        src = {k: v for k, v in src.items() if k not in _DYNAMIC_CLASS_VARS}
+        for var in _DYNAMIC_CLASS_VARS:
+            if var in src:
+                del src[var]
         return cls(**src | {_LOAD_LAZY_FIELD: lazy, _LOAD_TYPES_ON_INIT: True})
 
     def to_dict(self) -> Dict[str, Any]:

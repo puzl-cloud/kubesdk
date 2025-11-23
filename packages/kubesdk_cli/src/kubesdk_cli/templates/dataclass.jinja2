@@ -1,7 +1,7 @@
 {% for decorator in decorators -%}
 {{ decorator }}
 {% endfor -%}
-@dataclass(
+@dataclass(slots=True,
 {%- if keyword_only or frozen -%}
 {%- if keyword_only -%}kw_only=True{%- endif -%}
 {%- if keyword_only and frozen -%}, {% endif -%}

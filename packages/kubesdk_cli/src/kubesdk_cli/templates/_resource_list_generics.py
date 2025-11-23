@@ -11,7 +11,7 @@ ResourceT = TypeVar("ResourceT", bound=K8sResource)
 
 
 @loader
-@dataclass(kw_only=True, frozen=True)
+@dataclass(slots=True, kw_only=True, frozen=True)
 class K8sResourceList(Generic[ResourceT], K8sResource):
     items: list[ResourceT]
     metadata: ListMeta = field(default_factory=ListMeta)
