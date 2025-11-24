@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from enum import Enum
-from typing import Union, Type, Callable, overload, Literal, Sequence, Any
+from typing import Type, Callable, overload, Literal, Sequence, Any
 from inspect import isclass
 from dataclasses import dataclass, field, replace
 import asyncio
@@ -77,7 +77,7 @@ _DEFAULT_LOGGING = K8sAPIRequestLoggingConfig()
 async def rest_api_request(
         method: HTTPMethod,
         url: str,
-        data: dict[str, Union[str, int, bool, list, dict]] | list[dict[str, Union[str, int, bool, list, dict]]] = None,
+        data: dict[str, str | int | bool | list | dict] | list[dict[str, str | int | bool | list | dict]] = None,
         *,
         headers: dict[str, str] = None,
         _context: APIContext = None,
@@ -174,11 +174,11 @@ async def rest_api_request(
     return response_data
 
 
-def __resource_is_namespaced(resource: Union[Type[K8sResource], K8sResource]) -> bool:
+def __resource_is_namespaced(resource: Type[K8sResource] | K8sResource) -> bool:
     return "/namespaces/{namespace}/" in resource.api_path_
 
 
-def __build_request_url(resource: Union[Type[K8sResource], K8sResource], name: str = None, namespace: str = None) -> str:
+def __build_request_url(resource: Type[K8sResource], K8sResource, name: str = None, namespace: str = None) -> str:
     """
     `namespace` and `name` args have priority over the values in resource.metadata.
     """
@@ -338,7 +338,7 @@ async def create_k8s_resource(
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
         return_api_exceptions: Literal[None] = None
-) -> Union[ResourceT, Status]: ...
+) -> ResourceT | Status: ...
 
 @overload
 async def create_k8s_resource(
@@ -350,7 +350,7 @@ async def create_k8s_resource(
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
         return_api_exceptions: Sequence[int] = None
-) -> Union[ResourceT, Status, RESTAPIError[Status]]: ...
+) -> ResourceT | Status | RESTAPIError[Status]: ...
 
 async def create_k8s_resource(
         resource: ResourceT,
@@ -361,7 +361,7 @@ async def create_k8s_resource(
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
         return_api_exceptions: Sequence[int] = None
-) -> Union[ResourceT, Status, RESTAPIError[Status]]:
+) -> ResourceT | Status | RESTAPIError[Status]:
     method = HTTPMethod.POST
     bugged_api_backoff_limit, attempts = 3, 0
     while attempts < bugged_api_backoff_limit:
@@ -494,7 +494,7 @@ async def update_k8s_resource(
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
         return_api_exceptions: Literal[None] = None
-) -> Union[ResourceT, Status]: ...
+) -> ResourceT | Status: ...
 
 @overload
 async def update_k8s_resource(
@@ -511,7 +511,7 @@ async def update_k8s_resource(
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
         return_api_exceptions: Sequence[int] = None
-) -> Union[ResourceT, Status, RESTAPIError[Status]]: ...
+) -> ResourceT | Status | RESTAPIError[Status]: ...
 
 async def update_k8s_resource(
         resource: ResourceT,
@@ -527,7 +527,7 @@ async def update_k8s_resource(
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
         return_api_exceptions: Sequence[int] = None
-) -> Union[ResourceT, Status, RESTAPIError[Status]]:
+) -> ResourceT | Status | RESTAPIError[Status]:
 
     # Do strategic merge if we can
     method = HTTPMethod.PATCH
@@ -627,20 +627,21 @@ async def delete_k8s_resource(
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
         return_api_exceptions: Literal[None] = None
-) -> Union[ResourceT, Status]: ...
+) -> ResourceT | Status: ...
 
 @overload
 async def delete_k8s_resource(
         resource: ResourceT,
-        server: str,
         name: str = None,
         namespace: str = None,
+        *
+        server: str,
         headers: dict[str, str] = None,
         delete_options: DeleteOptions = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
         return_api_exceptions: Literal[None] = None
-) -> Union[ResourceT, Status]: ...
+) -> ResourceT | Status: ...
 
 @overload
 async def delete_k8s_resource(
@@ -654,7 +655,7 @@ async def delete_k8s_resource(
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
         return_api_exceptions: Sequence[int] = None
-) -> Union[ResourceT, Status, RESTAPIError[Status]]: ...
+) -> ResourceT | Status | RESTAPIError[Status]: ...
 
 @overload
 async def delete_k8s_resource(
@@ -668,7 +669,7 @@ async def delete_k8s_resource(
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
         return_api_exceptions: Sequence[int] = None
-) -> Union[ResourceT, Status, RESTAPIError[Status]]: ...
+) -> ResourceT | Status | RESTAPIError[Status]: ...
 
 async def delete_k8s_resource(
         resource: Type[ResourceT] | ResourceT,
@@ -681,7 +682,7 @@ async def delete_k8s_resource(
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
         return_api_exceptions: Sequence[int] = None
-) -> Union[ResourceT, Status, RESTAPIError[Status]]:
+) -> ResourceT | Status | RESTAPIError[Status]:
     method = HTTPMethod.DELETE
     try:
         response = await rest_api_request(
@@ -713,7 +714,7 @@ async def create_or_update_k8s_resource(
         force: bool = False,
         ignore_list_conflicts: bool = False,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING
-) -> Union[ResourceT, Status]:
+) -> ResourceT | Status:
 
     # We catch 403 here too, because if there's ResourceQuota set, and it's drained,
     # it will return 403 instead of 409 even if resource with this name exists.
