@@ -178,7 +178,7 @@ def __resource_is_namespaced(resource: Type[K8sResource] | K8sResource) -> bool:
     return "/namespaces/{namespace}/" in resource.api_path_
 
 
-def __build_request_url(resource: Type[K8sResource], K8sResource, name: str = None, namespace: str = None) -> str:
+def __build_request_url(resource: Type[K8sResource] | K8sResource, name: str = None, namespace: str = None) -> str:
     """
     `namespace` and `name` args have priority over the values in resource.metadata.
     """
