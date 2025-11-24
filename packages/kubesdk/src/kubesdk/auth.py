@@ -275,7 +275,7 @@ class APIContext:
             return aiohttp.ClientSession(
                 connector=aiohttp.TCPConnector(limit=0, ssl=ssl_context),
                 timeout=aiohttp.ClientTimeout(total=60),
-                read_bufsize=2 ** 32,  # 4 MB. Enough for the default Kubernetes object size limit of 1MB.
+                read_bufsize=2 ** 22,  # 4 MB. Enough for the default Kubernetes object size limit of 1MB.
                 base_url=self.server,
                 headers=headers,
                 auth=auth
