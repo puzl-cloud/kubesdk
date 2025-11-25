@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import sys
 from enum import Enum
-from typing import Type, Callable, overload, Literal, Sequence, Any
+from typing import Type, Callable, overload, Literal, Sequence, Any, Mapping
 from inspect import isclass
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, replace, fields
 import asyncio
 import logging
 import json
@@ -62,6 +62,128 @@ class APIRequestLoggingConfig:
         return self.response_body
 
 
+class DryRun(str, Enum):
+    All = "All"
+
+
+class PropagationPolicy(str, Enum):
+    Orphan = "Orphan"
+    Background = "Background"
+    Foreground = "Foreground"
+
+
+class LabelSelectorOperator(str, Enum):
+    In = "In"
+    NotIn = "NotIn"
+    Exists = "Exists"
+    DoesNotExist = "DoesNotExist"
+
+
+@dataclass(kw_only=True, frozen=True)
+class LabelSelectorRequirement:
+    key: str
+    operator: LabelSelectorOperator
+    values: Sequence[str] = field(default_factory=list)
+
+
+@dataclass(kw_only=True, frozen=True)
+class LabelSelector:
+    matchLabels: Mapping[str, str] = field(default_factory=dict)
+    matchExpressions: Sequence[LabelSelectorRequirement] = field(default_factory=list)
+
+    def to_query_value(self) -> str:
+        parts: list[str] = []
+        for k, v in self.matchLabels.items():
+            parts.append(f"{k}={v}")
+        for expr in self.matchExpressions:
+            op = expr.operator
+            if op is LabelSelectorOperator.In:
+                values = ",".join(expr.values)
+                parts.append(f"{expr.key} in ({values})")
+            elif op is LabelSelectorOperator.NotIn:
+                values = ",".join(expr.values)
+                parts.append(f"{expr.key} notin ({values})")
+            elif op is LabelSelectorOperator.Exists:
+                parts.append(expr.key)
+            elif op is LabelSelectorOperator.DoesNotExist:
+                parts.append(f"!{expr.key}")
+            else:
+                raise ValueError(f"Unsupported LabelSelector operator: {op}")
+        return ",".join(parts)
+
+
+class SelectorOp(str, Enum):
+    eq = "="
+    neq = "!="
+
+
+@dataclass(kw_only=True, frozen=True)
+class FieldSelectorRequirement:
+    # ToDo: Make `field` type of PathPicker to validate that the requested resource even have this field
+    field: str
+    operator: SelectorOp
+    value: str
+
+
+@dataclass(kw_only=True, frozen=True)
+class FieldSelector:
+    requirements: Sequence[FieldSelectorRequirement]
+
+    def to_query_value(self) -> str:
+        return ",".join(
+            f"{r.field}{r.operator.value}{r.value}"
+            for r in self.requirements)
+
+
+@dataclass(kw_only=True, frozen=True)
+class K8sQueryParams:
+    pretty: str | None = None
+    _continue: str | None = None  # will be turned into `continue` on request
+    fieldSelector: FieldSelector | None = None
+    labelSelector: LabelSelector | None = None
+    limit: int | None = None
+    resourceVersion: str | None = None
+    timeoutSeconds: int | None = None
+    watch: bool | None = None
+    allowWatchBookmarks: bool | None = None
+    gracePeriodSeconds: int | None = None
+    propagationPolicy: PropagationPolicy | None = None
+    dryRun: DryRun | None = None
+    fieldManager: str | None = None
+    force: bool | None = None
+
+    def to_http_params(self) -> list[tuple[str, str]]:
+        items = []
+        for f in fields(self):
+            name = f.name
+            value = getattr(self, name)
+            if value is None:
+                continue
+
+            if name == "_continue":
+                items.append(("continue", str(value)))
+                continue
+
+            if isinstance(value, FieldSelector):
+                items.append(("fieldSelector", value.to_query_value()))
+                continue
+
+            if isinstance(value, LabelSelector):
+                items.append(("labelSelector", value.to_query_value()))
+                continue
+
+            if isinstance(value, Enum):
+                sval = value.value
+            elif isinstance(value, bool):
+                sval = "true" if value else "false"
+            else:
+                sval = str(value)
+
+            items.append((name, sval))
+
+        return items
+
+
 @dataclass(kw_only=True, frozen=True)
 class K8sAPIRequestLoggingConfig(APIRequestLoggingConfig):
     api_name: str = field(default="Kubernetes")
@@ -79,6 +201,7 @@ async def rest_api_request(
         url: str,
         data: dict[str, str | int | bool | list | dict] | list[dict[str, str | int | bool | list | dict]] = None,
         *,
+        params: list[tuple[str, str]] = None,
         headers: dict[str, str] = None,
         _context: APIContext = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
@@ -108,6 +231,7 @@ async def rest_api_request(
             async with _context.session.request(
                     method,
                     url,
+                    params=params,
                     headers=headers,
                     json=data,
                     timeout=request_timeout,
@@ -243,6 +367,7 @@ async def get_k8s_resource(
         namespace: str = None,
         *,
         server: str = None,
+        params: K8sQueryParams = None,
         headers: dict[str, str] = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
@@ -256,6 +381,7 @@ async def get_k8s_resource(
         namespace: str = None,
         *,
         server: str = None,
+        params: K8sQueryParams = None,
         headers: dict[str, str] = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
@@ -267,6 +393,7 @@ async def get_k8s_resource(
         resource: ResourceT,
         *,
         server: str = None,
+        params: K8sQueryParams = None,
         headers: dict[str, str] = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
@@ -278,6 +405,7 @@ async def get_k8s_resource(
         resource: ResourceT,
         *,
         server: str = None,
+        params: K8sQueryParams = None,
         headers: dict[str, str] = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
@@ -290,6 +418,7 @@ async def get_k8s_resource(
         namespace: str = None,
         *,
         server: str = None,
+        params: K8sQueryParams = None,
         headers: dict[str, str] = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING
@@ -301,6 +430,7 @@ async def get_k8s_resource(
         namespace: str = None,
         *,
         server: str = None,
+        params: K8sQueryParams = None,
         headers: dict[str, str] = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
@@ -311,6 +441,7 @@ async def get_k8s_resource(
         response = await rest_api_request(
             method=method,
             url=f"{server.strip('/') if server else ''}/{__build_request_url(resource, name, namespace)}",
+            params=params.to_http_params() if params else None,
             headers=headers,
             data=None,
             processing=processing,
@@ -334,6 +465,7 @@ async def create_k8s_resource(
         namespace: str = None,
         *,
         server: str = None,
+        params: K8sQueryParams = None,
         headers: dict[str, str] = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
@@ -346,6 +478,7 @@ async def create_k8s_resource(
         namespace: str = None,
         *,
         server: str = None,
+        params: K8sQueryParams = None,
         headers: dict[str, str] = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
@@ -357,6 +490,7 @@ async def create_k8s_resource(
         namespace: str = None,
         *,
         server: str = None,
+        params: K8sQueryParams = None,
         headers: dict[str, str] = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
@@ -370,6 +504,7 @@ async def create_k8s_resource(
             response = await rest_api_request(
                 method=method,
                 url=f"{server.strip('/') if server else ''}/{__build_request_url(resource, namespace=namespace)}",
+                params=params.to_http_params() if params else None,
                 headers=headers,
                 data=resource.to_dict(),
                 processing=processing,
@@ -392,7 +527,7 @@ async def create_k8s_resource(
                 raise __decode_k8s_api_response(e)
             raise
         
-    raise  # for the bugged pycharm typechecker, will never happen
+    raise  # for the bugged pycharm typechecker; will never happen
 
 
 #
@@ -486,6 +621,7 @@ async def update_k8s_resource(
         namespace: str | None = None,
         *,
         server: str = None,
+        params: K8sQueryParams = None,
         headers: dict[str, str] = None,
         built_from_latest: ResourceT = None,
         paths: list[PathPicker] = None,
@@ -503,6 +639,7 @@ async def update_k8s_resource(
         namespace: str | None = None,
         *,
         server: str = None,
+        params: K8sQueryParams = None,
         headers: dict[str, str] = None,
         built_from_latest: ResourceT = None,
         paths: list[PathPicker] = None,
@@ -519,6 +656,7 @@ async def update_k8s_resource(
         namespace: str | None = None,
         *,
         server: str = None,
+        params: K8sQueryParams = None,
         headers: dict[str, str] = None,
         built_from_latest: ResourceT = None,
         paths: list[PathPicker] = None,
@@ -596,6 +734,7 @@ async def update_k8s_resource(
         response = await rest_api_request(
             method=method,
             url=url,
+            params=params.to_http_params() if params else None,
             headers=headers | {"Content-Type": content_type},
             data=request_data,
             processing=processing,
@@ -622,6 +761,7 @@ async def delete_k8s_resource(
         namespace: str = None,
         *,
         server: str = None,
+        params: K8sQueryParams = None,
         headers: dict[str, str] = None,
         delete_options: DeleteOptions = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
@@ -650,6 +790,7 @@ async def delete_k8s_resource(
         namespace: str = None,
         *,
         server: str = None,
+        params: K8sQueryParams = None,
         headers: dict[str, str] = None,
         delete_options: DeleteOptions = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
@@ -664,6 +805,7 @@ async def delete_k8s_resource(
         namespace: str = None,
         *,
         server: str = None,
+        params: K8sQueryParams = None,
         headers: dict[str, str] = None,
         delete_options: DeleteOptions = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
@@ -677,6 +819,7 @@ async def delete_k8s_resource(
         namespace: str = None,
         *,
         server: str = None,
+        params: K8sQueryParams = None,
         headers: dict[str, str] = None,
         delete_options: DeleteOptions = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
@@ -688,6 +831,7 @@ async def delete_k8s_resource(
         response = await rest_api_request(
             method=method,
             url=f"{server.strip('/') if server else ''}/{__build_request_url(resource, name=name, namespace=namespace)}",
+            params=params.to_http_params() if params else None,
             headers=headers,
             data=delete_options.to_dict() if delete_options else None,
             processing=processing,
@@ -709,6 +853,7 @@ async def create_or_update_k8s_resource(
         namespace: str | None = None,
         *,
         server: str = None,
+        params: K8sQueryParams = None,
         headers: dict[str, str] = None,
         paths: list[PathPicker] = None,
         force: bool = False,
@@ -729,6 +874,7 @@ async def create_or_update_k8s_resource(
             response = await create_k8s_resource(
                 resource, namespace,
                 server=server,
+                params=params,
                 headers=headers,
                 log=create_log,
                 return_api_exceptions=create_return_codes)
@@ -741,6 +887,7 @@ async def create_or_update_k8s_resource(
                     paths=paths,
                     force=force,
                     ignore_list_conflicts=ignore_list_conflicts,
+                    params=params,
                     headers=headers,
                     log=update_log,
                     return_api_exceptions=update_return_codes)
@@ -750,4 +897,4 @@ async def create_or_update_k8s_resource(
                     raise e
                 await asyncio.sleep(2)
 
-    raise  # for the bugged pycharm typechecker, will never happen
+    raise  # for the bugged pycharm typechecker; will never happen

@@ -318,7 +318,7 @@ class APIContext:
             return self._address_book[idx]
 
     @property
-    def session(self) -> Any:
+    def session(self) -> aiohttp.ClientSession:
         """
         Real aiohttp.ClientSession bound to this context call.
 
