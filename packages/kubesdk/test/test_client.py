@@ -3,56 +3,56 @@ import unittest
 from kubesdk.client import *
 
 
-class TestLabelSelector(unittest.TestCase):
+class TestQueryLabelSelector(unittest.TestCase):
     def test_only_match_labels(self):
-        sel = LabelSelector(matchLabels={"app": "nginx", "tier": "frontend"})
+        sel = QueryLabelSelector(matchLabels={"app": "nginx", "tier": "frontend"})
         self.assertEqual(sel.to_query_value(), "app=nginx,tier=frontend")
 
     def test_only_match_expressions_in_notin(self):
-        expr1 = LabelSelectorRequirement(
+        expr1 = QueryLabelSelectorRequirement(
             key="env",
-            operator=LabelSelectorOperator.In,
+            operator=LabelSelectorOp.In,
             values=("prod", "staging"),
         )
-        expr2 = LabelSelectorRequirement(
+        expr2 = QueryLabelSelectorRequirement(
             key="tier",
-            operator=LabelSelectorOperator.NotIn,
+            operator=LabelSelectorOp.NotIn,
             values=("cache",),
         )
-        sel = LabelSelector(matchExpressions=(expr1, expr2))
+        sel = QueryLabelSelector(matchExpressions=(expr1, expr2))
         self.assertEqual(
             sel.to_query_value(),
             "env in (prod,staging),tier notin (cache)",
         )
 
     def test_exists_and_does_not_exist_with_labels(self):
-        expr1 = LabelSelectorRequirement(
+        expr1 = QueryLabelSelectorRequirement(
             key="env",
-            operator=LabelSelectorOperator.Exists,
+            operator=LabelSelectorOp.Exists,
         )
-        expr2 = LabelSelectorRequirement(
+        expr2 = QueryLabelSelectorRequirement(
             key="debug",
-            operator=LabelSelectorOperator.DoesNotExist,
+            operator=LabelSelectorOp.DoesNotExist,
         )
-        sel = LabelSelector(
+        sel = QueryLabelSelector(
             matchLabels={"app": "nginx"},
             matchExpressions=(expr1, expr2),
         )
         self.assertEqual(sel.to_query_value(), "app=nginx,env,!debug")
 
     def test_label_selector_empty(self):
-        sel = LabelSelector()
+        sel = QueryLabelSelector()
         self.assertEqual(sel.to_query_value(), "")
 
     def test_invalid_operator(self):
         class FakeOp(str, Enum):
             Fake = "Fake"
-        expr = LabelSelectorRequirement(
+        expr = QueryLabelSelectorRequirement(
             key="env",
             operator=FakeOp.Fake,  # type: ignore[arg-type]
             values=("prod",),
         )
-        sel = LabelSelector(matchExpressions=(expr,))
+        sel = QueryLabelSelector(matchExpressions=(expr,))
         with self.assertRaises(ValueError):
             sel.to_query_value()
 
@@ -60,7 +60,7 @@ class TestFieldSelector(unittest.TestCase):
     def test_single_eq(self):
         req = FieldSelectorRequirement(
             field="metadata.name",
-            operator=SelectorOp.eq,
+            operator=FieldSelectorOp.eq,
             value="nginx",
         )
         sel = FieldSelector(requirements=(req,))
@@ -69,7 +69,7 @@ class TestFieldSelector(unittest.TestCase):
     def test_single_neq(self):
         req = FieldSelectorRequirement(
             field="status.phase",
-            operator=SelectorOp.neq,
+            operator=FieldSelectorOp.neq,
             value="Running",
         )
         sel = FieldSelector(requirements=(req,))
@@ -78,12 +78,12 @@ class TestFieldSelector(unittest.TestCase):
     def test_multiple_requirements(self):
         req1 = FieldSelectorRequirement(
             field="metadata.namespace",
-            operator=SelectorOp.eq,
+            operator=FieldSelectorOp.eq,
             value="default",
         )
         req2 = FieldSelectorRequirement(
             field="spec.nodeName",
-            operator=SelectorOp.neq,
+            operator=FieldSelectorOp.neq,
             value="node1",
         )
         sel = FieldSelector(requirements=(req1, req2))
@@ -136,12 +136,12 @@ class TestK8sQueryParams(unittest.TestCase):
             requirements=(
                 FieldSelectorRequirement(
                     field="metadata.name",
-                    operator=SelectorOp.eq,
+                    operator=FieldSelectorOp.eq,
                     value="nginx",
                 ),
             ),
         )
-        label_sel = LabelSelector(matchLabels={"app": "nginx"})
+        label_sel = QueryLabelSelector(matchLabels={"app": "nginx"})
         params = K8sQueryParams(
             fieldSelector=field_sel,
             labelSelector=label_sel,
@@ -157,8 +157,8 @@ class TestK8sQueryParams(unittest.TestCase):
     def test_field_and_label_selector_strings(self):
         params = K8sQueryParams(
             fieldSelector=FieldSelector(requirements=[
-                FieldSelectorRequirement(field="metadata.namespace", operator=SelectorOp.eq, value="default")]),
-            labelSelector=LabelSelector(matchLabels={"app": "nginx"})
+                FieldSelectorRequirement(field="metadata.namespace", operator=FieldSelectorOp.eq, value="default")]),
+            labelSelector=QueryLabelSelector(matchLabels={"app": "nginx"})
         ).to_http_params()
         self.assertEqual(
             params,

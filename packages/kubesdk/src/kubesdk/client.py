@@ -72,7 +72,7 @@ class PropagationPolicy(str, Enum):
     Foreground = "Foreground"
 
 
-class LabelSelectorOperator(str, Enum):
+class LabelSelectorOp(str, Enum):
     In = "In"
     NotIn = "NotIn"
     Exists = "Exists"
@@ -80,16 +80,16 @@ class LabelSelectorOperator(str, Enum):
 
 
 @dataclass(kw_only=True, frozen=True)
-class LabelSelectorRequirement:
+class QueryLabelSelectorRequirement:
     key: str
-    operator: LabelSelectorOperator
+    operator: LabelSelectorOp
     values: Sequence[str] = field(default_factory=list)
 
 
 @dataclass(kw_only=True, frozen=True)
-class LabelSelector:
+class QueryLabelSelector:
     matchLabels: Mapping[str, str] = field(default_factory=dict)
-    matchExpressions: Sequence[LabelSelectorRequirement] = field(default_factory=list)
+    matchExpressions: Sequence[QueryLabelSelectorRequirement] = field(default_factory=list)
 
     def to_query_value(self) -> str:
         parts: list[str] = []
@@ -97,22 +97,22 @@ class LabelSelector:
             parts.append(f"{k}={v}")
         for expr in self.matchExpressions:
             op = expr.operator
-            if op is LabelSelectorOperator.In:
+            if op is LabelSelectorOp.In:
                 values = ",".join(expr.values)
                 parts.append(f"{expr.key} in ({values})")
-            elif op is LabelSelectorOperator.NotIn:
+            elif op is LabelSelectorOp.NotIn:
                 values = ",".join(expr.values)
                 parts.append(f"{expr.key} notin ({values})")
-            elif op is LabelSelectorOperator.Exists:
+            elif op is LabelSelectorOp.Exists:
                 parts.append(expr.key)
-            elif op is LabelSelectorOperator.DoesNotExist:
+            elif op is LabelSelectorOp.DoesNotExist:
                 parts.append(f"!{expr.key}")
             else:
-                raise ValueError(f"Unsupported LabelSelector operator: {op}")
+                raise ValueError(f"Unsupported QueryLabelSelector operator: {op}")
         return ",".join(parts)
 
 
-class SelectorOp(str, Enum):
+class FieldSelectorOp(str, Enum):
     eq = "="
     neq = "!="
 
@@ -121,7 +121,7 @@ class SelectorOp(str, Enum):
 class FieldSelectorRequirement:
     # ToDo: Make `field` type of PathPicker to validate that the requested resource even have this field
     field: str
-    operator: SelectorOp
+    operator: FieldSelectorOp
     value: str
 
 
@@ -140,7 +140,7 @@ class K8sQueryParams:
     pretty: str | None = None
     _continue: str | None = None  # will be turned into `continue` on request
     fieldSelector: FieldSelector | None = None
-    labelSelector: LabelSelector | None = None
+    labelSelector: QueryLabelSelector | None = None
     limit: int | None = None
     resourceVersion: str | None = None
     timeoutSeconds: int | None = None
@@ -168,7 +168,7 @@ class K8sQueryParams:
                 items.append(("fieldSelector", value.to_query_value()))
                 continue
 
-            if isinstance(value, LabelSelector):
+            if isinstance(value, QueryLabelSelector):
                 items.append(("labelSelector", value.to_query_value()))
                 continue
 
