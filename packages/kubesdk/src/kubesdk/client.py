@@ -82,7 +82,7 @@ class LabelSelectorOp(str, Enum):
 @dataclass(kw_only=True, frozen=True)
 class QueryLabelSelectorRequirement:
     key: str
-    operator: LabelSelectorOp
+    op: LabelSelectorOp
     values: Sequence[str] = field(default_factory=list)
 
 
@@ -96,7 +96,7 @@ class QueryLabelSelector:
         for k, v in self.matchLabels.items():
             parts.append(f"{k}={v}")
         for expr in self.matchExpressions:
-            op = expr.operator
+            op = expr.op
             if op is LabelSelectorOp.In:
                 values = ",".join(expr.values)
                 parts.append(f"{expr.key} in ({values})")
@@ -121,18 +121,14 @@ class FieldSelectorOp(str, Enum):
 class FieldSelectorRequirement:
     # ToDo: Make `field` type of PathPicker to validate that the requested resource even have this field
     field: str
-    operator: FieldSelectorOp
+    op: FieldSelectorOp
     value: str
 
 
 @dataclass(kw_only=True, frozen=True)
 class FieldSelector:
     requirements: Sequence[FieldSelectorRequirement]
-
-    def to_query_value(self) -> str:
-        return ",".join(
-            f"{r.field}{r.operator.value}{r.value}"
-            for r in self.requirements)
+    def to_query_value(self) -> str: return ",".join(f"{r.field}{r.op.value}{r.value}" for r in self.requirements)
 
 
 @dataclass(kw_only=True, frozen=True)
@@ -143,7 +139,7 @@ class K8sQueryParams:
     labelSelector: QueryLabelSelector | None = None
     limit: int | None = None
     resourceVersion: str | None = None
-    timeoutSeconds: int | None = None
+    timeoutSeconds: int = field(default=30)
     watch: bool | None = None
     allowWatchBookmarks: bool | None = None
     gracePeriodSeconds: int | None = None
@@ -206,7 +202,7 @@ async def rest_api_request(
         _context: APIContext = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: APIRequestLoggingConfig = _DEFAULT_LOGGING,
-        return_api_exceptions: Sequence[int] = None
+        return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None
 ) -> dict | list | RESTAPIError:
     headers, return_api_exceptions = headers or {}, return_api_exceptions or []
     headers.setdefault("Accept", "application/json")
@@ -276,7 +272,9 @@ async def rest_api_request(
                     else:
                         _log_level = _log.debug
                     _log_level(error_msg, extra=extra_log)
-                    if response.status in return_api_exceptions:
+                    if response.status in return_api_exceptions \
+                            or any(isinstance(exc, RESTAPIError) and exc.status == response.status
+                                   for exc in return_api_exceptions):
                         return api_error
                     raise api_error
 
@@ -385,7 +383,7 @@ async def get_k8s_resource(
         headers: dict[str, str] = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
-        return_api_exceptions: Sequence[int] = None
+        return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None
 ) -> ResourceT | RESTAPIError[Status]: ...
 
 @overload
@@ -409,7 +407,7 @@ async def get_k8s_resource(
         headers: dict[str, str] = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
-        return_api_exceptions: Sequence[int] = None
+        return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None
 ) -> ResourceT | RESTAPIError[Status]: ...
 
 @overload
@@ -434,7 +432,7 @@ async def get_k8s_resource(
         headers: dict[str, str] = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
-        return_api_exceptions: Sequence[int] = None
+        return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None
 ) -> ResourceT | RESTAPIError[Status]:
     method = HTTPMethod.GET
     try:
@@ -482,7 +480,7 @@ async def create_k8s_resource(
         headers: dict[str, str] = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
-        return_api_exceptions: Sequence[int] = None
+        return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None
 ) -> ResourceT | Status | RESTAPIError[Status]: ...
 
 async def create_k8s_resource(
@@ -494,7 +492,7 @@ async def create_k8s_resource(
         headers: dict[str, str] = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
-        return_api_exceptions: Sequence[int] = None
+        return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None
 ) -> ResourceT | Status | RESTAPIError[Status]:
     method = HTTPMethod.POST
     bugged_api_backoff_limit, attempts = 3, 0
@@ -647,7 +645,7 @@ async def update_k8s_resource(
         ignore_list_conflicts: bool = False,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
-        return_api_exceptions: Sequence[int] = None
+        return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None
 ) -> ResourceT | Status | RESTAPIError[Status]: ...
 
 async def update_k8s_resource(
@@ -664,7 +662,7 @@ async def update_k8s_resource(
         ignore_list_conflicts: bool = False,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
-        return_api_exceptions: Sequence[int] = None
+        return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None
 ) -> ResourceT | Status | RESTAPIError[Status]:
 
     # Do strategic merge if we can
@@ -795,7 +793,7 @@ async def delete_k8s_resource(
         delete_options: DeleteOptions = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
-        return_api_exceptions: Sequence[int] = None
+        return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None
 ) -> ResourceT | Status | RESTAPIError[Status]: ...
 
 @overload
@@ -810,7 +808,7 @@ async def delete_k8s_resource(
         delete_options: DeleteOptions = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
-        return_api_exceptions: Sequence[int] = None
+        return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None
 ) -> ResourceT | Status | RESTAPIError[Status]: ...
 
 async def delete_k8s_resource(
@@ -824,7 +822,7 @@ async def delete_k8s_resource(
         delete_options: DeleteOptions = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
         log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
-        return_api_exceptions: Sequence[int] = None
+        return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None
 ) -> ResourceT | Status | RESTAPIError[Status]:
     method = HTTPMethod.DELETE
     try:

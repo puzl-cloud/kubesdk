@@ -11,12 +11,12 @@ class TestQueryLabelSelector(unittest.TestCase):
     def test_only_match_expressions_in_notin(self):
         expr1 = QueryLabelSelectorRequirement(
             key="env",
-            operator=LabelSelectorOp.In,
+            op=LabelSelectorOp.In,
             values=("prod", "staging"),
         )
         expr2 = QueryLabelSelectorRequirement(
             key="tier",
-            operator=LabelSelectorOp.NotIn,
+            op=LabelSelectorOp.NotIn,
             values=("cache",),
         )
         sel = QueryLabelSelector(matchExpressions=(expr1, expr2))
@@ -28,11 +28,11 @@ class TestQueryLabelSelector(unittest.TestCase):
     def test_exists_and_does_not_exist_with_labels(self):
         expr1 = QueryLabelSelectorRequirement(
             key="env",
-            operator=LabelSelectorOp.Exists,
+            op=LabelSelectorOp.Exists,
         )
         expr2 = QueryLabelSelectorRequirement(
             key="debug",
-            operator=LabelSelectorOp.DoesNotExist,
+            op=LabelSelectorOp.DoesNotExist,
         )
         sel = QueryLabelSelector(
             matchLabels={"app": "nginx"},
@@ -44,12 +44,12 @@ class TestQueryLabelSelector(unittest.TestCase):
         sel = QueryLabelSelector()
         self.assertEqual(sel.to_query_value(), "")
 
-    def test_invalid_operator(self):
+    def test_invalid_op(self):
         class FakeOp(str, Enum):
             Fake = "Fake"
         expr = QueryLabelSelectorRequirement(
             key="env",
-            operator=FakeOp.Fake,  # type: ignore[arg-type]
+            op=FakeOp.Fake,  # type: ignore[arg-type]
             values=("prod",),
         )
         sel = QueryLabelSelector(matchExpressions=(expr,))
@@ -60,7 +60,7 @@ class TestFieldSelector(unittest.TestCase):
     def test_single_eq(self):
         req = FieldSelectorRequirement(
             field="metadata.name",
-            operator=FieldSelectorOp.eq,
+            op=FieldSelectorOp.eq,
             value="nginx",
         )
         sel = FieldSelector(requirements=(req,))
@@ -69,7 +69,7 @@ class TestFieldSelector(unittest.TestCase):
     def test_single_neq(self):
         req = FieldSelectorRequirement(
             field="status.phase",
-            operator=FieldSelectorOp.neq,
+            op=FieldSelectorOp.neq,
             value="Running",
         )
         sel = FieldSelector(requirements=(req,))
@@ -78,12 +78,12 @@ class TestFieldSelector(unittest.TestCase):
     def test_multiple_requirements(self):
         req1 = FieldSelectorRequirement(
             field="metadata.namespace",
-            operator=FieldSelectorOp.eq,
+            op=FieldSelectorOp.eq,
             value="default",
         )
         req2 = FieldSelectorRequirement(
             field="spec.nodeName",
-            operator=FieldSelectorOp.neq,
+            op=FieldSelectorOp.neq,
             value="node1",
         )
         sel = FieldSelector(requirements=(req1, req2))
@@ -96,7 +96,7 @@ class TestFieldSelector(unittest.TestCase):
 class TestK8sQueryParams(unittest.TestCase):
     def test_empty(self):
         params = K8sQueryParams()
-        self.assertEqual(params.to_http_params(), [])
+        self.assertEqual(params.to_http_params(), [("timeoutSeconds", "30")])
 
     def test_basic_scalars_bools_enums(self):
         params = K8sQueryParams(
@@ -136,7 +136,7 @@ class TestK8sQueryParams(unittest.TestCase):
             requirements=(
                 FieldSelectorRequirement(
                     field="metadata.name",
-                    operator=FieldSelectorOp.eq,
+                    op=FieldSelectorOp.eq,
                     value="nginx",
                 ),
             ),
@@ -151,13 +151,14 @@ class TestK8sQueryParams(unittest.TestCase):
             [
                 ("fieldSelector", "metadata.name=nginx"),
                 ("labelSelector", "app=nginx"),
+                ("timeoutSeconds", "30")
             ],
         )
 
     def test_field_and_label_selector_strings(self):
         params = K8sQueryParams(
             fieldSelector=FieldSelector(requirements=[
-                FieldSelectorRequirement(field="metadata.namespace", operator=FieldSelectorOp.eq, value="default")]),
+                FieldSelectorRequirement(field="metadata.namespace", op=FieldSelectorOp.eq, value="default")]),
             labelSelector=QueryLabelSelector(matchLabels={"app": "nginx"})
         ).to_http_params()
         self.assertEqual(
@@ -165,5 +166,6 @@ class TestK8sQueryParams(unittest.TestCase):
             [
                 ("fieldSelector", "metadata.namespace=default"),
                 ("labelSelector", "app=nginx"),
+                ("timeoutSeconds", "30")
             ],
         )

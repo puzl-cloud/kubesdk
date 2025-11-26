@@ -328,10 +328,12 @@ async def generate_for_schema(
             # We do this to generate sets from ordered lists for code consistency
             use_unique_items_as_set=True,
 
+            # 3.10+ only
+            use_union_operator=True,
+
             # FixMe: We should use reuse_model, but it's bugged for now:
             #  apis/controlplane.cluster.x-k8s.io/v1beta1: list object has no element 0
-            reuse_model=False,
-            use_union_operator=True
+            reuse_model=False
         ))
         logging.info(f"[ok]   {input_} -> {output}")
 
