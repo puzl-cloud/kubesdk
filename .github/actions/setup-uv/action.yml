@@ -5,7 +5,7 @@ inputs:
   uv-version:
     description: Version of uv to install
     required: false
-    default: "0.9.6"
+    default: "0.9.12"
 
   python-version:
     description: Python version to install
@@ -22,9 +22,3 @@ runs:
         python-version: ${{ inputs.python-version }}
         cache-local-path: "/tmp/.uv-cache"
         enable-cache: false
-
-    - name: Cache uv
-      uses: puzl-cloud/github-actions-cache@v4
-      with:
-        path: /tmp/.uv-cache
-        key: uv-${{ runner.os }}-${{ inputs.python-version }}-${{ hashFiles('uv.lock') }}
