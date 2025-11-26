@@ -709,3 +709,6 @@ class OpenAPIK8sParser(OpenAPIParser):
                     field.extras = extras | {"metadata": meta}
 
         return fields
+
+    # The function is bugged, so we drop _aliased types, and we support Python 3.10+ only anyway
+    def _Parser__alias_shadowed_imports(self, *_, **__): pass
