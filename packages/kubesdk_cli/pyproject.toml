@@ -27,9 +27,6 @@ classifiers = [
   "Programming Language :: Python :: 3 :: Only",
 ]
 
-[project.urls]
-Repository = "https://github.com/puzl-cloud/kubesdk"
-
 dependencies = [
     "datamodel-code-generator[http]==0.35.0",
     "pydantic>=2.4,<3",
@@ -40,8 +37,11 @@ dependencies = [
 [dependency-groups]
 test = ["coverage"]
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/kubesdk_cli"]
+[project.urls]
+Repository = "https://github.com/puzl-cloud/kubesdk"
 
 [project.scripts]
 kubesdk = "kubesdk_cli.cli:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kubesdk_cli"]

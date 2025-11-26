@@ -27,9 +27,6 @@ classifiers = [
   "Programming Language :: Python :: 3 :: Only",
 ]
 
-[project.urls]
-Repository = "https://github.com/puzl-cloud/kubesdk"
-
 dependencies = [
     "aiohttp==3.12.15",
     "PyYAML==6.0.3",
@@ -38,6 +35,9 @@ dependencies = [
 
 [dependency-groups]
 test = ["jsonpatch", "coverage"]
+
+[project.urls]
+Repository = "https://github.com/puzl-cloud/kubesdk"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kubesdk"]

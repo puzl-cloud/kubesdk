@@ -27,11 +27,11 @@ classifiers = [
   "Programming Language :: Python :: 3 :: Only",
 ]
 
-[project.urls]
-Repository = "https://github.com/puzl-cloud/kube-models"
-
 [dependency-groups]
 test = ["coverage"]
+
+[project.urls]
+Repository = "https://github.com/puzl-cloud/kube-models"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kube_models"]
