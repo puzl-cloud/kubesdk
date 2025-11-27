@@ -23,7 +23,7 @@ git clone "${TARGET_REPO}" "${CLONE_PATH}"
 rm -rf "${PACKAGE_SRC_DIR}/dist"
 cd "${CLONE_PATH}"
 find . -mindepth 1 -maxdepth 1 ! -name ".git" -exec rm -rf {} +
-cp -r "${PACKAGE_SRC_DIR}/*" .
+cp -r "${PACKAGE_SRC_DIR}/." .
 git config user.name "${GIT_USER_NAME}"
 git config user.email "${GIT_USER_EMAIL}"
 git config gpg.format ssh
