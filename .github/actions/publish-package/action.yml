@@ -49,7 +49,7 @@ runs:
     - name: Publish ${{ inputs.package_name }}
       if: steps.check_version.outputs.version_exists == 'false'
       shell: bash
-      run: uv publish packages/${{ inputs.package_name }}/dist --dry-run
+      run: uv publish packages/${{ inputs.package_name }}/dist/${{ inputs.package_name }}-* --dry-run
 
     - name: Commit and push changes
       if: steps.check_version.outputs.version_exists == 'false' && inputs.commit_and_push == 'true'
