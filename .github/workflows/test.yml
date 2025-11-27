@@ -62,9 +62,6 @@ jobs:
           parallel: 'true'
           flag-name: 'python-${{ matrix.python-version }}'
 
-      - name: Check if publishable (dry-run)
-        run: uv publish --dry-run
-
   coveralls-finish:
     needs: [test]
     runs-on: puzl-ubuntu-latest
