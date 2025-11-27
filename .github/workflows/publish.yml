@@ -24,19 +24,22 @@ jobs:
       - name: Publish kubesdk-cli
         uses: ./.github/actions/publish-package
         with:
-          package_name: kubesdk_cli
+          package_name: 'kubesdk_cli'
 
       - name: Publish kube-models
         uses: ./.github/actions/publish-package
         with:
-          package_name: kube_models
+          package_name: 'kube_models'
           generate_models: 'true'
           commit_and_push: 'true'
-          target_repo: 'puzl-cloud/kube-models'
           clone_path: '/tmp/kube_models'
-          ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+          ssh_private_key: '${{ secrets.SSH_PRIVATE_KEY }}'
+          git_user_email: '${{ secrets.GIT_USER_EMAIL }}'
+          git_user_name: 'puzl.cloud[bot]'
+          git_host_key: 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
+          target_repo: 'git@github.com:puzl-cloud/kube-models.git'
 
       - name: Publish kubesdk
         uses: ./.github/actions/publish-package
         with:
-          package_name: kubesdk
+          package_name: 'kubesdk'

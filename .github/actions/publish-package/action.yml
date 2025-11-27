@@ -24,6 +24,18 @@ inputs:
     description: GitHub token for push
     required: false
     default: ''
+  git_user_email:
+    description: Set email for git user
+    required: false
+    default: ''
+  git_user_name:
+    description: Set name for git user
+    required: false
+    default: ''
+  git_host_key:
+    description: Set ssh key for git host
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -31,8 +43,8 @@ runs:
     - name: Check version for ${{ inputs.package_name }}
       id: check_version
       env:
-        PACKAGE_NAME: ${{ inputs.package_name }}
-        PACKAGE_REMOTE_VERSION_URL: https://pypi.org/pypi/${{ inputs.package_name }}/json
+        PACKAGE_NAME: '${{ inputs.package_name }}'
+        PACKAGE_REMOTE_VERSION_URL: 'https://pypi.org/pypi/${{ inputs.package_name }}/json'
       shell: bash
       run: bash .github/scripts/check_package_version.sh
 
@@ -55,13 +67,13 @@ runs:
       if: steps.check_version.outputs.version_exists == 'false' && inputs.commit_and_push == 'true'
       env:
         # GitHub host key from https://api.github.com/meta
-        GIT_HOST_KEY: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
-        GIT_USER_NAME: "puzl.cloud[bot]"
-        GIT_USER_EMAIL: ${{ secrets.GIT_USER_EMAIL }}
-        PACKAGE_NAME: ${{ inputs.package_name }}
-        PACKAGE_VERSION: ${{ steps.check_version.outputs.local_version }}
-        SSH_PRIVATE_KEY: ${{ inputs.ssh_private_key }}
-        TARGET_REPO: git@github.com:${{ inputs.target_repo }}.git
-        CLONE_PATH: ${{ inputs.clone_path }}
+        GIT_HOST_KEY: '${{ inputs.git_host_key }}'
+        GIT_USER_NAME: '${{ inputs.git_user_name }}'
+        GIT_USER_EMAIL: '${{ inputs.git_user_email }}'
+        PACKAGE_NAME: '${{ inputs.package_name }}'
+        PACKAGE_VERSION: '${{ steps.check_version.outputs.local_version }}'
+        SSH_PRIVATE_KEY: '${{ inputs.ssh_private_key }}'
+        TARGET_REPO: 'git@github.com:${{ inputs.target_repo }}.git'
+        CLONE_PATH: '${{ inputs.clone_path }}'
       shell: bash
       run: bash .github/scripts/commit_and_push.sh
