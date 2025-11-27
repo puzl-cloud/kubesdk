@@ -51,7 +51,6 @@ jobs:
 
       - name: Combine coverage reports
         run: |
-          uv run coverage combine
           uv run coverage xml
 
       - name: Upload coverage to Coveralls
@@ -60,6 +59,19 @@ jobs:
         with:
           github-token: '${{ secrets.GITHUB_TOKEN }}'
           path-to-lcov: 'coverage.xml'
+          parallel: 'true'
+          flag-name: 'python-${{ matrix.python-version }}'
 
       - name: Check if publishable (dry-run)
         run: uv publish --dry-run
+
+   coveralls-finish:
+    needs: [test]
+    runs-on: puzl-ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Finalize Coveralls parallel
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          parallel-finished: true
