@@ -32,4 +32,4 @@ git add .
 git commit -m "Update models to ${PACKAGE_VERSION} version"
 git push
 git checkout -b "${PACKAGE_VERSION}"
-git push "${PACKAGE_VERSION}"
+git push origin "${PACKAGE_VERSION}"
