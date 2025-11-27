@@ -29,7 +29,7 @@ git config user.email "${GIT_USER_EMAIL}"
 git config gpg.format ssh
 git config user.signingkey "${SSH_PUBLIC_KEY_PATH}"
 git add .
-git commit -m "Update models to ${PACKAGE_VERSION} version"
+git commit -m -S "Update models to ${PACKAGE_VERSION} version"
 git push
 git checkout -b "${PACKAGE_VERSION}"
 git push origin "${PACKAGE_VERSION}"
