@@ -1,0 +1,62 @@
+name: Publish Package
+description: Check version, build and publish a Python package
+inputs:
+  package_name:
+    description: Package name
+    required: true
+  generate_models:
+    description: Whether to run model generation
+    required: false
+    default: 'false'
+  commit_and_push:
+    description: Whether to commit and push to another repo
+    required: false
+    default: 'false'
+  target_repo:
+    description: Target repository for commit/push
+    required: false
+    default: ''
+  clone_path:
+    description: Target directory for clone
+    required: false
+    default: ''
+  ssh_private_key:
+    description: GitHub token for push
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Check version for ${{ inputs.package_name }}
+      id: check_version
+      env:
+        PACKAGE_NAME: ${{ inputs.package_name }}
+        PACKAGE_REMOTE_VERSION_URL: https://pypi.org/pypi/${{ inputs.package_name }}/json
+      run: bash .github/scripts/check_package_version.sh
+
+    - name: Generate data models
+      if: steps.check_version.outputs.version_exists == 'false' && inputs.generate_models == 'true'
+      run: bash kube_models_generator.sh
+
+    - name: Build ${{ inputs.package_name }}
+      if: steps.check_version.outputs.version_exists == 'false'
+      run: uv build --package ${{ inputs.package_name }} --out-dir packages/${{ inputs.package_name }}/dist
+
+    - name: Publish ${{ inputs.package_name }}
+      if: steps.check_version.outputs.version_exists == 'false'
+      run: uv publish packages/${{ inputs.package_name }}/dist --dry-run
+
+    - name: Commit and push changes
+      if: steps.check_version.outputs.version_exists == 'false' && inputs.commit_and_push == 'true'
+      env:
+        # GitHub host key from https://api.github.com/meta
+        GIT_HOST_KEY: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+        GIT_USER_NAME: "puzl.cloud[bot]"
+        GIT_USER_EMAIL: "support@puzl.cloud"
+        PACKAGE_NAME: ${{ inputs.package_name }}
+        PACKAGE_VERSION: ${{ steps.check_version.outputs.local_version }}
+        SSH_PRIVATE_KEY: ${{ inputs.ssh_private_key }}
+        TARGET_REPO: git@github.com:${{ inputs.target_repo }}.git
+        CLONE_PATH: ${{ inputs.clone_path }}
+      run: bash .github/scripts/commit_and_push.sh
