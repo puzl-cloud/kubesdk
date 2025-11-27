@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import string
 import secrets
 import base64
@@ -321,6 +322,7 @@ class APIContext:
                 connector=aiohttp.TCPConnector(limit=0, ssl=ssl_context),
                 timeout=aiohttp.ClientTimeout(total=60),
                 read_bufsize=2 ** 21,  # 2 MB (4MB effective limit). Enough for the default k8s object limit of 1MB.
+                json_serialize=functools.partial(json.dumps, separators=(',', ':')),
                 base_url=self.server,
                 headers=headers,
                 auth=auth

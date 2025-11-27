@@ -193,111 +193,6 @@ _DEFAULT_PROCESSING = APIRequestProcessingConfig()
 _DEFAULT_LOGGING = K8sAPIRequestLoggingConfig()
 
 
-@authenticated
-async def __rest_api_request(
-        method: HTTPMethod,
-        url: str,
-        data: dict[str, str | int | bool | list | dict] | list[dict[str, str | int | bool | list | dict]] = None,
-        *,
-        params: list[tuple[str, str]] = None,
-        headers: dict[str, str] = None,
-        _context: APIContext = None,
-        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
-        log: APIRequestLoggingConfig = _DEFAULT_LOGGING,
-        return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None
-) -> dict | list | RESTAPIError:
-    headers, return_api_exceptions = headers or {}, return_api_exceptions or []
-    headers.setdefault("Accept", "application/json")
-    api_name = log.api_name
-    max_attempts = min(1, processing.backoff_limit)
-    error_msg = f"{api_name} API request failed"
-    success_msg = f"{api_name} API request has been processed"
-    request_timeout = aiohttp.ClientTimeout(total=processing.http_timeout)
-    extra_log = {
-        "API": api_name,
-        "url": url,
-        "server": _context.server,
-        "method": method,
-        "request": data if log.request_body else None
-    }
-    _log.debug(f"Requesting {api_name} API", extra=extra_log)
-    attempt = 0
-
-    while attempt < max_attempts:
-        try:
-            attempt += 1
-            async with _context.session.request(
-                    method,
-                    url,
-                    params=params,
-                    headers=headers,
-                    json=data,
-                    timeout=request_timeout,
-                    allow_redirects=False) as response:
-                if response.status == 204:
-                    return {}
-
-                response_data, is_json = None, True
-                try:
-                    response_data = await response.json()
-                    is_json = True
-                except (json.JSONDecodeError, aiohttp.ContentTypeError):
-                    response_data = await response.text()
-                    is_json = False
-
-                extra_log |= {
-                    "attempt": attempt,
-                    "status": response.status,
-                    "response": response_data if log.should_log_response(response_data) else None
-                }
-                if not is_json:
-                    _log.error(f"Received non-JSON response from {api_name} API", extra=extra_log)
-                    response_data = {"data": response_data}
-
-                # Check if we have to retry forcibly
-                exc_cls = ERROR_TYPE_BY_CODE.get(response.status) or RESTAPIError
-                if response.status in processing.retry_statuses or exc_cls in processing.retry_statuses:
-                    if attempt < max_attempts:
-                        _log.debug(f"Retrying request due to {response.status} response status", extra=extra_log)
-                        await asyncio.sleep(processing.backoff_interval)
-                        continue
-                    raise exc_cls(response.status, f"{error_msg}, max_attempts={max_attempts} reached", response_data)
-
-                # Check if we have to retry due to non-ok status code
-                if response.status >= 300:
-                    api_error = exc_cls(response.status, error_msg, response_data)
-                    extra_log["error"] = str(api_error.status)
-                    if response.status not in log.not_error_statuses and exc_cls not in log.not_error_statuses:
-                        _log_level = _log.error
-                    elif log.on_success:
-                        _log_level = _log.info
-                    else:
-                        _log_level = _log.debug
-                    _log_level(error_msg, extra=extra_log)
-                    if response.status in return_api_exceptions \
-                            or any(isinstance(exc, RESTAPIError) and exc.status == response.status
-                                   for exc in return_api_exceptions):
-                        return api_error
-                    raise api_error
-
-                if log.on_success:
-                    _log.info(success_msg, extra=extra_log)
-                else:
-                    _log.debug(success_msg, extra=extra_log | {"response": response_data})
-                break
-        except asyncio.TimeoutError as exc:
-            msg = f"API request failed by {request_timeout.total}sec timeout"
-            msg = f"{msg}. Will be retried." if attempt < max_attempts else msg
-            _log.error(msg, extra=extra_log | {"error": str(exc), "attempt": attempt})
-            if attempt >= max_attempts:
-                raise
-        except aiohttp.ClientConnectorError as exc:
-            _log.error("API request failed", extra=extra_log | {"error": str(exc), "attempt": attempt})
-            raise RuntimeError(f"{api_name} API connection has been broken unexpectedly.")
-
-    return response_data
-
-
 async def _raw_api_request(
         method: HTTPMethod,
         url: str,
@@ -333,7 +228,8 @@ async def _raw_api_request(
                 headers=headers,
                 json=data,
                 timeout=request_timeout,
-                allow_redirects=False
+                allow_redirects=False,
+                read_bufsize=None  # take from session
             )
 
             # Check if we have to retry forcibly
