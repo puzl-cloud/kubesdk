@@ -141,7 +141,7 @@ class K8sQueryParams:
     labelSelector: QueryLabelSelector | None = None
     limit: int | None = None
     resourceVersion: str | None = None
-    timeoutSeconds: int = field(default=30)
+    timeoutSeconds: int | None = None
     watch: bool | None = None
     allowWatchBookmarks: bool | None = None
     gracePeriodSeconds: int | None = None

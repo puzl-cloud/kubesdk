@@ -88,10 +88,7 @@ def authenticated(fn: _F) -> _F:
             - context.call(...) being awaitable and returning an async generator
             - context.call(...) directly returning an async generator
             """
-            results = ctx.call(fn, *args, **kwargs)
-            if inspect.isawaitable(results):
-                results = await results
-            # At this point, `res` must be an async generator / async iterator.
+            results = await ctx.call(fn, *args, **kwargs)
             async for res in results:
                 yield res
 
@@ -391,7 +388,7 @@ class APIContext:
             raise RuntimeError("APIContext.loop used outside APIContext.call()")
         return self._workers[worker_idx].loop
 
-    async def call(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    async def call(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Awaitable | AsyncIterable:
         """
         Run user async function `fn` on one worker's loop with one specific session bound.
 
