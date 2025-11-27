@@ -65,7 +65,7 @@ jobs:
       - name: Check if publishable (dry-run)
         run: uv publish --dry-run
 
-   coveralls-finish:
+  coveralls-finish:
     needs: [test]
     runs-on: puzl-ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
