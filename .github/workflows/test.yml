@@ -49,6 +49,11 @@ jobs:
           package_name: 'kubesdk'
           test_path: 'packages/kubesdk/test'
 
+      - name: Combine coverage reports
+        run: |
+          uv run coverage combine
+          uv run coverage xml
+
       - name: Upload coverage to Coveralls
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: coverallsapp/github-action@v2
