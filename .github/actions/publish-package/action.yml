@@ -33,18 +33,22 @@ runs:
       env:
         PACKAGE_NAME: ${{ inputs.package_name }}
         PACKAGE_REMOTE_VERSION_URL: https://pypi.org/pypi/${{ inputs.package_name }}/json
+      shell: bash
       run: bash .github/scripts/check_package_version.sh
 
     - name: Generate data models
       if: steps.check_version.outputs.version_exists == 'false' && inputs.generate_models == 'true'
+      shell: bash
       run: bash kube_models_generator.sh
 
     - name: Build ${{ inputs.package_name }}
       if: steps.check_version.outputs.version_exists == 'false'
+      shell: bash
       run: uv build --package ${{ inputs.package_name }} --out-dir packages/${{ inputs.package_name }}/dist
 
     - name: Publish ${{ inputs.package_name }}
       if: steps.check_version.outputs.version_exists == 'false'
+      shell: bash
       run: uv publish packages/${{ inputs.package_name }}/dist --dry-run
 
     - name: Commit and push changes
@@ -59,4 +63,5 @@ runs:
         SSH_PRIVATE_KEY: ${{ inputs.ssh_private_key }}
         TARGET_REPO: git@github.com:${{ inputs.target_repo }}.git
         CLONE_PATH: ${{ inputs.clone_path }}
+      shell: bash
       run: bash .github/scripts/commit_and_push.sh
