@@ -4,13 +4,12 @@ from weakref import WeakKeyDictionary
 from threading import RLock
 
 # noinspection ALL
-from ._k8s_resource_base import K8sResource, loader, ListMeta, _bind_class_vars_from_original_kind
+from ._k8s_resource_base import K8sResource, ListMeta, _bind_class_vars_from_original_kind
 
 
 ResourceT = TypeVar("ResourceT", bound=K8sResource)
 
 
-@loader
 @dataclass(slots=True, kw_only=True, frozen=True)
 class K8sResourceList(Generic[ResourceT], K8sResource):
     items: list[ResourceT]
