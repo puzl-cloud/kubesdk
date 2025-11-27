@@ -1,12 +1,7 @@
-# SPDX-License-Identifier: MIT
-# Portions of this file are derived from the Kopf project:
-#   https://github.com/nolar/kopf
-# Copyright (c) 2020 Sergey Vasilyev <nolar@nolar.info>
-# Copyright (c) 2019-2020 Zalando SE
-# Licensed under the MIT License; see the LICENSE file or https://opensource.org/licenses/MIT
 from __future__ import annotations
 
 import asyncio
+import inspect
 import string
 import secrets
 import base64
@@ -16,13 +11,14 @@ import ssl
 import threading
 import tempfile
 from contextvars import ContextVar
-from typing import Any, Callable, Generic, Iterator, Mapping, TypeVar, cast, Awaitable
+from typing import Any, Callable, Generic, TypeVar, cast, Awaitable, AsyncIterable
 
 import aiohttp
 
 from .common import host_from_url
 from .errors import *
 from .credentials import Vault, ConnectionInfo, LoginError
+from ._temp_files import _TempFiles
 
 
 T = TypeVar("T")
@@ -80,6 +76,55 @@ def authenticated(fn: _F) -> _F:
     and the function is retried with a new context until success or a fatal error occurs.
     """
     @functools.wraps(fn)
+    async def gen_wrapper(*args: Any, **kwargs: Any):
+        # We have this undocumented in a rare case of multiple clients with different RBAC within one cluster.
+        # Should never be used normally.
+        session_key = kwargs.pop("_session_key", "default")
+        explicit_context: APIContext | None = kwargs.pop("_context", None)
+
+        async def _run_with_context(ctx: APIContext):
+            """
+            Call `fn` through the context, handling both:
+            - context.call(...) being awaitable and returning an async generator
+            - context.call(...) directly returning an async generator
+            """
+            results = ctx.call(fn, *args, **kwargs)
+            if inspect.isawaitable(results):
+                results = await results
+            # At this point, `res` must be an async generator / async iterator.
+            async for res in results:
+                yield res
+
+        if explicit_context is not None:
+            async for item in _run_with_context(explicit_context):
+                yield item
+            return
+
+        vault_key = host_from_url(kwargs.get("url")) or DEFAULT_VAULT_NAME
+        vaults = _auth_vault_var.get()
+        vault = vaults.get(vault_key)
+        if vault is None:
+            raise UnauthorizedError()
+
+        forbidden_err: ForbiddenError | None = None
+        async for key, info, context in vault.extended(APIContext, f"context-{session_key}"):
+            try:
+                async for item in _run_with_context(context):
+                    yield item
+                return
+            except UnauthorizedError as e:
+                await vault.invalidate(key, info, exc=e)
+            except ForbiddenError as e:
+                forbidden_err = e
+            except RuntimeError as e:
+                if not context.closed:
+                    raise
+                await vault.invalidate(key, info, exc=e)
+
+        raise forbidden_err or UnauthorizedError()
+
+
+    @functools.wraps(fn)
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
         # We have this undocumented in a rare case of multiple clients with different RBAC within one cluster.
         # Should never be used normally.
@@ -105,13 +150,16 @@ def authenticated(fn: _F) -> _F:
                 # Such a setup can lead to invalid credentials renewing due to wait_for_emptiness() mechanics.
                 forbidden_err = e
             except RuntimeError as e:
+                # If context is already closed, invalidate. Otherwise, bubble up.
                 if not context.closed:
                     raise
                 await vault.invalidate(key, info, exc=e)
 
         raise forbidden_err or UnauthorizedError()
 
-    return cast(_F, wrapper)
+    is_generator = inspect.isasyncgenfunction(fn)
+    return cast(_F, gen_wrapper) if is_generator else cast(_F, wrapper)
+
 
 
 class _Worker:
@@ -275,7 +323,7 @@ class APIContext:
             return aiohttp.ClientSession(
                 connector=aiohttp.TCPConnector(limit=0, ssl=ssl_context),
                 timeout=aiohttp.ClientTimeout(total=60),
-                read_bufsize=2 ** 22,  # 4 MB. Enough for the default Kubernetes object size limit of 1MB.
+                read_bufsize=2 ** 21,  # 2 MB (4MB effective limit). Enough for the default k8s object limit of 1MB.
                 base_url=self.server,
                 headers=headers,
                 auth=auth
@@ -343,7 +391,7 @@ class APIContext:
             raise RuntimeError("APIContext.loop used outside APIContext.call()")
         return self._workers[worker_idx].loop
 
-    async def call(self, fn: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any) -> Any:
+    async def call(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """
         Run user async function `fn` on one worker's loop with one specific session bound.
 
@@ -358,15 +406,78 @@ class APIContext:
         worker_idx, session_idx = self._choose_address()
         worker = self._workers[worker_idx]
 
-        async def _runner() -> Any:
-            token = self._current_addr.set((worker_idx, session_idx))
-            try:
-                return await fn(*args, **kwargs, _context=self)
-            finally:
-                self._current_addr.reset(token)
+        is_generator = inspect.isasyncgenfunction(fn)
+        if not is_generator:
+            async def _runner() -> Any:
+                token = self._current_addr.set((worker_idx, session_idx))
+                try:
+                    return await fn(*args, **kwargs, _context=self)
+                finally:
+                    self._current_addr.reset(token)
 
-        fut = asyncio.run_coroutine_threadsafe(_runner(), worker.loop)
-        return await asyncio.wrap_future(fut)
+            fut = asyncio.run_coroutine_threadsafe(_runner(), worker.loop)
+            return await asyncio.wrap_future(fut)
+
+        async def _create_gen():
+            """Create the underlying async generator on the worker loop."""
+            async def _runner_make():
+                token = self._current_addr.set((worker_idx, session_idx))
+                try:
+                    return fn(*args, **kwargs, _context=self)
+                finally:
+                    self._current_addr.reset(token)
+
+            _fut = asyncio.run_coroutine_threadsafe(_runner_make(), worker.loop)
+            return await asyncio.wrap_future(_fut)
+
+        async def _anext(agen):
+            """Advance the async generator by one item on the worker loop."""
+            async def _runner_next():
+                token = self._current_addr.set((worker_idx, session_idx))
+                try:
+                    return await agen.__anext__()
+                finally:
+                    self._current_addr.reset(token)
+
+            _fut = asyncio.run_coroutine_threadsafe(_runner_next(), worker.loop)
+            return await asyncio.wrap_future(_fut)
+
+        async def _aclose(agen):
+            """Close the async generator on the worker loop."""
+            async def _runner_close():
+                token = self._current_addr.set((worker_idx, session_idx))
+                try:
+                    await agen.aclose()
+                finally:
+                    self._current_addr.reset(token)
+
+            _fut = asyncio.run_coroutine_threadsafe(_runner_close(), worker.loop)
+            return await asyncio.wrap_future(_fut)
+
+        async def _proxy():
+            """
+            Async generator that the caller sees.
+                - Creates the real async generator on the worker loop
+                - Calls __anext__ on the worker loop for each iteration
+                - Re-raises exceptions
+            """
+            agen = await _create_gen()
+            try:
+                while True:
+                    try:
+                        item = await _anext(agen)
+                    except StopAsyncIteration:
+                        break
+                    yield item
+            finally:
+                try:
+                    await _aclose(agen)
+                except Exception:
+                    # We don't care if close fails during shutdown
+                    pass
+
+        # We return an async iterator here
+        return _proxy()
 
     @property
     def closed(self) -> bool:
@@ -379,47 +490,6 @@ class APIContext:
         for w in self._workers:
             w.stop()
         # tempfiles will be purged by _TempFiles.__del__
-
-
-class _TempFiles(Mapping[bytes, str]):
-    """
-    A container for the temporary files, which are purged on garbage collection.
-
-    The files are purged when the container is garbage-collected. The container
-    is garbage-collected when its parent `APISession` is garbage-collected or
-    explicitly closed (by `Vault` on removal of corresponding credentials).
-    """
-    _path_suffix: str
-    _paths: dict[bytes, str]
-
-    def __init__(self, path_suffix: str) -> None:
-        super().__init__()
-        self._paths: dict[bytes, str] = {}
-        self._path_suffix = path_suffix
-
-    def __del__(self) -> None:
-        self.purge()
-
-    def __len__(self) -> int:
-        return len(self._paths)
-
-    def __iter__(self) -> Iterator[bytes]:
-        return iter(self._paths)
-
-    def __getitem__(self, item: bytes) -> str:
-        if item not in self._paths:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=self._path_suffix) as f:
-                f.write(item)
-            self._paths[item] = f.name
-        return self._paths[item]
-
-    def purge(self) -> None:
-        for _, path in self._paths.items():
-            try:
-                os.remove(path)
-            except OSError:
-                pass  # already removed
-        self._paths.clear()
 
 
 _auth_vault_var.set(dict())
