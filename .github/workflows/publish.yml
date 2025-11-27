@@ -21,17 +21,12 @@ jobs:
       - name: Setup UV
         uses: ./.github/actions/setup-uv
 
-      - name: Publish kubesdk
-        uses: ./.github/actions/publish-package
-        with:
-          package_name: kubesdk
-
-      - name: Publish kubesdk_cli
+      - name: Publish kubesdk-cli
         uses: ./.github/actions/publish-package
         with:
           package_name: kubesdk_cli
 
-      - name: Publish kube_models
+      - name: Publish kube-models
         uses: ./.github/actions/publish-package
         with:
           package_name: kube_models
@@ -40,3 +35,8 @@ jobs:
           target_repo: 'puzl-cloud/kube-models'
           clone_path: '/tmp/kube_models'
           ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Publish kubesdk
+        uses: ./.github/actions/publish-package
+        with:
+          package_name: kubesdk

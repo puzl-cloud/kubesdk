@@ -1,0 +1,36 @@
+name: Test Package
+description: Build and test a Python package
+inputs:
+  package_name:
+    description: Package name
+    required: true
+  generate_models:
+    description: Whether to run model generation before build
+    required: false
+    default: 'false'
+  run_tests:
+    description: Whether to run tests
+    required: false
+    default: 'true'
+  test_path:
+    description: Path to tests directory
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Generate data models
+      if: inputs.generate_models == 'true'
+      shell: bash
+      run: bash kube_models_generator.sh
+    
+    - name: Build ${{ inputs.package_name }}
+      shell: bash
+      run: uv build packages/${{ inputs.package_name }}
+    
+    - name: Run ${{ inputs.package_name }} tests with coverage
+      if: inputs.run_tests == 'true' && inputs.test_path != ''
+      shell: bash
+      run: |
+        uv run coverage run --parallel-mode -m unittest discover -v -s ${{ inputs.test_path }}

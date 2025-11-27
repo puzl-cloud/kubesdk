@@ -57,7 +57,7 @@ runs:
         # GitHub host key from https://api.github.com/meta
         GIT_HOST_KEY: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
         GIT_USER_NAME: "puzl.cloud[bot]"
-        GIT_USER_EMAIL: "support@puzl.cloud"
+        GIT_USER_EMAIL: "noreply@puzl.cloud"
         PACKAGE_NAME: ${{ inputs.package_name }}
         PACKAGE_VERSION: ${{ steps.check_version.outputs.local_version }}
         SSH_PRIVATE_KEY: ${{ inputs.ssh_private_key }}
