@@ -96,7 +96,7 @@ class TestFieldSelector(unittest.TestCase):
 class TestK8sQueryParams(unittest.TestCase):
     def test_empty(self):
         params = K8sQueryParams()
-        self.assertEqual(params.to_http_params(), [("timeoutSeconds", "30")])
+        self.assertEqual(params.to_http_params(), [])
 
     def test_basic_scalars_bools_enums(self):
         params = K8sQueryParams(
@@ -150,8 +150,7 @@ class TestK8sQueryParams(unittest.TestCase):
             params,
             [
                 ("fieldSelector", "metadata.name=nginx"),
-                ("labelSelector", "app=nginx"),
-                ("timeoutSeconds", "30")
+                ("labelSelector", "app=nginx")
             ],
         )
 
@@ -165,7 +164,6 @@ class TestK8sQueryParams(unittest.TestCase):
             params,
             [
                 ("fieldSelector", "metadata.namespace=default"),
-                ("labelSelector", "app=nginx"),
-                ("timeoutSeconds", "30")
+                ("labelSelector", "app=nginx")
             ],
         )
