@@ -5,12 +5,12 @@ inputs:
   uv-version:
     description: Version of uv to install
     required: false
-    default: "0.9.12"
+    default: '0.9.12'
 
   python-version:
     description: Python version to install
     required: false
-    default: "3.11"
+    default: '3.11'
 
 runs:
   using: composite
@@ -18,7 +18,6 @@ runs:
     - name: Install uv
       uses: astral-sh/setup-uv@v7
       with:
-        version: ${{ inputs.uv-version }}
-        python-version: ${{ inputs.python-version }}
-        cache-local-path: "/tmp/.uv-cache"
+        version: '${{ inputs.uv-version }}'
+        python-version: '${{ inputs.python-version }}'
         enable-cache: false

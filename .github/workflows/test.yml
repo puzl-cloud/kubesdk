@@ -25,7 +25,7 @@ jobs:
       - name: Setup UV
         uses: ./.github/actions/setup-uv
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: '${{ matrix.python-version }}'
 
       - name: Sync UV
         run: uv sync --group test
@@ -33,21 +33,21 @@ jobs:
       - name: Test kubesdk-cli
         uses: ./.github/actions/test-package
         with:
-          package_name: kubesdk_cli
+          package_name: 'kubesdk_cli'
           run_tests: 'false'
 
       - name: Test kube-models
         uses: ./.github/actions/test-package
         with:
-          package_name: kube_models
+          package_name: 'kube_models'
           generate_models: 'true'
-          test_path: packages/kube_models/test
+          test_path: 'packages/kube_models/test'
 
       - name: Test kubesdk
         uses: ./.github/actions/test-package
         with:
-          package_name: kubesdk
-          test_path: packages/kubesdk/test
+          package_name: 'kubesdk'
+          test_path: 'packages/kubesdk/test'
 
       - name: Combine coverage reports
         run: |
@@ -58,8 +58,8 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: coverallsapp/github-action@v2
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          path-to-lcov: coverage.xml
+          github-token: '${{ secrets.GITHUB_TOKEN }}'
+          path-to-lcov: 'coverage.xml'
 
       - name: Check if publishable (dry-run)
         run: uv publish --dry-run
