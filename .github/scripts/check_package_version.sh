@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 LOCAL_VERSION=$(uv version --package "${PACKAGE_NAME}" --short)
 echo "Local version: ${LOCAL_VERSION}"
