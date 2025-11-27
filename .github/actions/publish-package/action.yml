@@ -73,7 +73,7 @@ runs:
         PACKAGE_NAME: '${{ inputs.package_name }}'
         PACKAGE_VERSION: '${{ steps.check_version.outputs.local_version }}'
         SSH_PRIVATE_KEY: '${{ inputs.ssh_private_key }}'
-        TARGET_REPO: 'git@github.com:${{ inputs.target_repo }}.git'
+        TARGET_REPO: '${{ inputs.target_repo }}'
         CLONE_PATH: '${{ inputs.clone_path }}'
       shell: bash
       run: bash .github/scripts/commit_and_push.sh
