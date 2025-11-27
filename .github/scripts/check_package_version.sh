@@ -7,9 +7,11 @@ echo "Local version: ${LOCAL_VERSION}"
 REMOTE_VERSION=$(curl -s "${PACKAGE_REMOTE_VERSION_URL}" | jq -r .info.version)
 echo "Remote version: ${REMOTE_VERSION}"
 
-echo "package_name=${PACKAGE_NAME}" >> "${GITHUB_OUTPUT}"
-echo "local_version=${LOCAL_VERSION}" >> "${GITHUB_OUTPUT}"
-echo "remote_version=${REMOTE_VERSION}" >> "${GITHUB_OUTPUT}"
+{
+  echo "package_name=${PACKAGE_NAME}"
+  echo "local_version=${LOCAL_VERSION}"
+  echo "remote_version=${REMOTE_VERSION}"
+} >> "${GITHUB_OUTPUT}"
 
 if [ "${LOCAL_VERSION}" = "${REMOTE_VERSION}" ]; then
   echo "version_exists=true" >> "${GITHUB_OUTPUT}"

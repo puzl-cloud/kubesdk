@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 SSH_DIR="${SSH_DIR:-$HOME/.ssh}"
 SSH_PRIVATE_KEY_NAME="${SSH_PRIVATE_KEY_NAME:-id_ed25519}"
 SSH_PRIVATE_KEY_PATH="${SSH_DIR}/${SSH_PRIVATE_KEY_NAME}"
 SSH_PUBLIC_KEY_NAME="${SSH_PUBLIC_KEY_NAME:-id_ed25519.pub}"
 SSH_PUBLIC_KEY_PATH="${SSH_DIR}/${SSH_PUBLIC_KEY_NAME}"
+PACKAGE_SRC_DIR="${PACKAGE_SRC_DIR}:-$(pwd)/packages/${PACKAGE_NAME}"
 
 mkdir -p "${SSH_DIR}"
 chmod 700 "${SSH_DIR}"
@@ -19,10 +20,10 @@ eval "$(ssh-agent -s)"
 ssh-add "${SSH_PRIVATE_KEY_PATH}"
         
 git clone "${TARGET_REPO}" "${CLONE_PATH}"
-rm -rf "${CLONE_PATH}/*"
-rm -rf "packages/${PACKAGE_NAME}/dist"
-cp -r "packages/${PACKAGE_NAME}/*" "${CLONE_PATH}/"
+rm -rf "${PACKAGE_SRC_DIR}/dist"
 cd "${CLONE_PATH}"
+find . -mindepth 1 -maxdepth 1 ! -name ".git" -exec rm -rf {} +
+cp -r "${PACKAGE_SRC_DIR}/*" .
 git config user.name "${GIT_USER_NAME}"
 git config user.email "${GIT_USER_EMAIL}"
 git config gpg.format ssh
