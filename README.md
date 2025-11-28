@@ -229,7 +229,7 @@ async def patch_limit_range() -> None:
         )
 ```
 
-### Working with multiple cluster
+### Working with multiple clusters
 
 ```python
 import asyncio
