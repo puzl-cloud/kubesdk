@@ -1,0 +1,75 @@
+name: Test
+
+on:
+  pull_request:
+    branches:
+      - main
+      - release
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    name: Run tests on Python ${{ matrix.python-version }}
+    runs-on: puzl-ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ "3.10", "3.11", "3.12", "3.13", "3.14" ]
+    env:
+      MAX_PARALLEL_DOWNLOAD: 10
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 #v6.0.0
+
+      - name: Setup uv
+        uses: ./.github/actions/setup-uv
+        with:
+          python-version: '${{ matrix.python-version }}'
+
+      - name: Sync uv
+        run: uv sync --group test
+
+      - name: Test kubesdk-cli
+        uses: ./.github/actions/test-package
+        with:
+          package_name: 'kubesdk_cli'
+          run_tests: 'false'
+
+      - name: Test kube-models
+        uses: ./.github/actions/test-package
+        with:
+          package_name: 'kube_models'
+          generate_models: 'true'
+          test_path: 'packages/kube_models/test'
+
+      - name: Test kubesdk
+        uses: ./.github/actions/test-package
+        with:
+          package_name: 'kubesdk'
+          test_path: 'packages/kubesdk/test'
+
+      - name: Combine coverage reports
+        run: |
+          uv run coverage combine
+          uv run coverage xml
+
+      - name: Upload coverage to Coveralls
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: coverallsapp/github-action@5cbfd81b66ca5d10c19b062c04de0199c215fb6e #v2.3.7
+        with:
+          github-token: '${{ secrets.GITHUB_TOKEN }}'
+          path-to-lcov: 'coverage.xml'
+          parallel: 'true'
+          flag-name: 'python-${{ matrix.python-version }}'
+
+  coveralls-finish:
+    needs: [test]
+    runs-on: puzl-ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Finalize Coveralls parallel
+        uses: coverallsapp/github-action@5cbfd81b66ca5d10c19b062c04de0199c215fb6e #v2.3.7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          parallel-finished: true

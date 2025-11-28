@@ -1,0 +1,46 @@
+name: "Release"
+
+on:
+  push:
+    branches:
+      - 'release/*'
+
+jobs:
+  publish:
+    runs-on: puzl-ubuntu-latest
+    environment:
+      name: pypi
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      UV_SYSTEM_PYTHON: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 #v6.0.0
+      - name: Setup uv
+        uses: ./.github/actions/setup-uv
+
+      - name: Publish kubesdk-cli
+        uses: ./.github/actions/publish-package
+        with:
+          package_name: 'kubesdk_cli'
+
+      - name: Publish kube-models
+        uses: ./.github/actions/publish-package
+        with:
+          package_name: 'kube_models'
+          generate_models: 'true'
+          commit_and_push: 'true'
+          clone_path: '/tmp/kube_models'
+          ssh_private_key: '${{ secrets.SSH_PRIVATE_KEY }}'
+          git_user_email: '${{ secrets.GIT_USER_EMAIL }}'
+          git_user_name: 'puzl.cloud[bot]'
+          # GitHub host key from https://api.github.com/meta
+          git_host_key: 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
+          target_repo: 'git@github.com:puzl-cloud/kube-models.git'
+
+      - name: Publish kubesdk
+        uses: ./.github/actions/publish-package
+        with:
+          package_name: 'kubesdk'

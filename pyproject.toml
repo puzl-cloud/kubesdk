@@ -1,0 +1,7 @@
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+kubesdk = { workspace = true }
+kubesdk-cli = { workspace = true }
+kube-models = { workspace = true }

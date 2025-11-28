@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kubesdk"
+version = "0.0.1"
+description = "Fast, fully typed Kubernetes client for Python."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Nik Paushkin", email = "nik@puzl.cloud" }]
+keywords = [
+  "kubesdk"
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3 :: Only",
+]
+
+dependencies = [
+    "aiohttp==3.12.15",
+    "PyYAML==6.0.3",
+    "kube-models==0.*"
+]
+
+[dependency-groups]
+test = ["jsonpatch", "coverage"]
+
+[project.urls]
+Repository = "https://github.com/puzl-cloud/kubesdk"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kubesdk"]
+
+[project.optional-dependencies]
+cli = ["kubesdk-cli"]

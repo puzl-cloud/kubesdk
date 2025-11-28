@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kube-models"
+version = "0.0.1"
+requires-python = ">=3.10"
+description = "Python dataclasses for all Kubernetes built-in resources (v1.23+)"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Nik Paushkin", email = "nik@puzl.cloud" }]
+keywords = [
+  "kubesdk", "kube-models"
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3 :: Only",
+]
+
+[dependency-groups]
+test = ["coverage"]
+
+[project.urls]
+Repository = "https://github.com/puzl-cloud/kube-models"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kube_models"]

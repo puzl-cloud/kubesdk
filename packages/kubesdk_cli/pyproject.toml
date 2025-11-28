@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kubesdk-cli"
+version = "0.0.1"
+requires-python = ">=3.10"
+description = "Kubernetes API models and CRD generator"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Nik Paushkin", email = "nik@puzl.cloud" }]
+keywords = [
+  "kubesdk", "cli"
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3 :: Only",
+]
+
+dependencies = [
+    "datamodel-code-generator[http]==0.35.0",
+    "pydantic>=2.4,<3",
+    "jinja2>=3.1",
+    "requests==2.32.5"
+]
+
+[dependency-groups]
+test = ["coverage"]
+
+[project.urls]
+Repository = "https://github.com/puzl-cloud/kubesdk"
+
+[project.scripts]
+kubesdk = "kubesdk_cli.cli:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kubesdk_cli"]
