@@ -298,7 +298,7 @@ def _to_immutable(v: Any) -> Any:
         return repr(v)
 
 
-class LazyLoadMeta(type):
+class _LazyLoadMeta(type):
     """
     A metaclass for dataclasses to automatically decode fields during initialization
     based on the metadata configuration and typing.
@@ -312,6 +312,11 @@ class LazyLoadMeta(type):
         supports_lazy = issubclass(cls, LazyLoadModel)
         lazy_requested = kwargs.get(_LOAD_LAZY_FIELD)
         should_use_lazy = supports_lazy and lazy_requested
+        
+        if not getattr(cls, "__lazy_methods_patched", False):
+            cls.__eq__ = LazyLoadModel.__eq__
+            cls.__hash__ = LazyLoadModel.__hash__
+            cls.__lazy_methods_patched = True
 
         if not should_use_lazy:
             if not kwargs.get(_LOAD_TYPES_ON_INIT):
@@ -357,7 +362,7 @@ class LazyLoadMeta(type):
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
-class LazyLoadModel(metaclass=LazyLoadMeta):
+class LazyLoadModel(metaclass=_LazyLoadMeta):
     """
     This model supports lazy loading of complex nested types avoiding unnecessary heavy recursions.
     """
