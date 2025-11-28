@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kubesdk"
-version = "0.0.1"
+version = "0.0.2"
 description = "Fast, fully typed Kubernetes client for Python."
 readme = "README.md"
 requires-python = ">=3.10"

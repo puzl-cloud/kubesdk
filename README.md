@@ -235,34 +235,58 @@ async def patch_limit_range() -> None:
 import asyncio
 from dataclasses import replace
 
-from kubesdk.login import login, KubeConfig
-from kubesdk.client import watch_k8s_resources, create_or_update_k8s_resource
+from kubesdk.login import login, KubeConfig, ServerInfo
+from kubesdk.client import watch_k8s_resources, create_or_update_k8s_resource, delete_k8s_resource, WatchEventType
 from kube_models.api_v1.io.k8s.api.core.v1 import Secret
 
 
-async def sync_secrets_between_clusters():
-    default = await login()
-    eu_finland_1 = await login(kubeconfig=KubeConfig(context_name="eu-finland-1.clusters.puzl.cloud"))
-    
-    src_ns, dst_ns = "default", "some_other"
-    
-    async for event in watch_k8s_resources(Secret, namespace=src_ns, server=default.server):
+async def sync_secrets_between_clusters(src_cluster: ServerInfo, dst_cluster: ServerInfo):
+    src_ns, dst_ns = "default", "test-kubesdk"
+    async for event in watch_k8s_resources(Secret, namespace=src_ns, server=src_cluster.server):
+        if event.type == WatchEventType.DELETED:
+            # Try to delete, skip if not found
+            await delete_k8s_resource(Secret, namespace=dst_ns, server=dst_cluster.server, return_api_exceptions=[404])
+            continue
+
+        if event.type == WatchEventType.ERROR:
+            status = event.object
+            raise Exception(f"Failed to watch Secrets: {status.data}")
+
+        # Optional
+        if event.type == WatchEventType.BOOKMARK:
+            continue
+
+        # Sync Secret on any other event
         src_secret = event.object
         dst_secret = replace(
             src_secret,
-            metadata=replace(
-                src_secret.metadata,
-                namespace=dst_ns,
-                
+            metadata=replace(src_secret.metadata, namespace=dst_ns,
                 # Drop all k8s runtime fields
                 uid=None,
                 resourceVersion=None,
-                managedFields=None
-            )
-        )
+                managedFields=None))
 
         # If the Secret exists, a patch is applied; if it doesn't, it will be created.
-        await create_or_update_k8s_resource(dst_secret, server=eu_finland_1.server)
+        await create_or_update_k8s_resource(dst_secret, server=dst_cluster.server)
+        print(f"Secret {dst_secret.metadata.name} has been synced "
+              f"from `{src_ns}` ns in {src_cluster.server} to `{dst_ns}` ns in {dst_cluster.server}")
+
+
+async def main():
+    default = await login()
+    eu_finland_1 = await login(kubeconfig=KubeConfig(context_name="eu-finland-1.clusters.puzl.cloud"))
+
+    # Endless syncing loop
+    while True:
+        try:
+            await sync_secrets_between_clusters(default, eu_finland_1)
+        except Exception as e:
+            print(e)
+            await asyncio.sleep(5)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
 ### CLI
