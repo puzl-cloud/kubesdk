@@ -22,12 +22,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Setup UV
+      - name: Setup uv
         uses: ./.github/actions/setup-uv
         with:
           python-version: '${{ matrix.python-version }}'
 
-      - name: Sync UV
+      - name: Sync uv
         run: uv sync --group test
 
       - name: Test kubesdk-cli

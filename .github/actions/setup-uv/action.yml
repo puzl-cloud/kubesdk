@@ -1,4 +1,4 @@
-name: Setup UV Environment
+name: Setup uv environment
 description: Install uv and configure caching
 
 inputs:

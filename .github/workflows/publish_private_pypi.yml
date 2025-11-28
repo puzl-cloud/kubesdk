@@ -18,7 +18,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-      - name: Setup UV
+      - name: Setup uv
         uses: ./.github/actions/setup-uv
       - name: Generate data models
         run: bash kube_models_generator.sh
