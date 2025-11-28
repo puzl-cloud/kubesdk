@@ -82,11 +82,10 @@ def _parse_exports_and_dataclasses(py_path: Path) -> tuple[set[str], set[str]]:
     return set(exports), dataclasses
 
 
-def write_inits_with_type_loader(base_dir: str | Path, extra_globals: list[str] = None) -> None:
+def write_inits(base_dir: str | Path, extra_globals: list[str] = None) -> None:
     """
     Generate __init__.py files that:
       • do explicit imports `from .mod import A, B, ...`
-      • wrap EXPORTED dataclasses: `A = __loader(A)` at package scope
       • wrap NON-EXPORTED dataclasses inside their own module (no re-export)
       • star-import subpackages (they do the same recursively)
       • emit __all__ with only exported names
@@ -97,7 +96,7 @@ def write_inits_with_type_loader(base_dir: str | Path, extra_globals: list[str] 
     base = Path(base_dir).resolve()
 
     extra_globals = extra_globals or []
-    loader_import: str = f"from {base.name}.loader import loader as __loader"
+    # loader_import: str = f"from {base.name}.loader import loader as __loader"
 
     for root, dirs, files in os.walk(base):
         pkg_dir = Path(root)
@@ -130,8 +129,8 @@ def write_inits_with_type_loader(base_dir: str | Path, extra_globals: list[str] 
                 all_exports.extend(sorted(exports))
 
             # wrap exported dataclasses at package scope
-            for cls in sorted(dcs & exports):
-                wrap_exported_lines.append(f"{cls} = __loader({cls})")
+            # for cls in sorted(dcs & exports):
+            #     wrap_exported_lines.append(f"{cls} = __loader({cls})")
 
             # wrap non-exported dataclasses inside their own module (no re-export)
             hidden = sorted(dcs - exports)
@@ -139,7 +138,7 @@ def write_inits_with_type_loader(base_dir: str | Path, extra_globals: list[str] 
                 wrap_internal_lines.append(f"from . import {mod} as __mod_{mod}")
                 for cls in hidden:
                     wrap_internal_lines.append(f"from .{mod} import {cls} as __{mod}_{cls}")
-                    wrap_internal_lines.append(f"__mod_{mod}.{cls} = __loader(__{mod}_{cls})")
+                    # wrap_internal_lines.append(f"__mod_{mod}.{cls} = __loader(__{mod}_{cls})")
                     wrap_internal_lines.append(f"del __{mod}_{cls}")
                 wrap_internal_lines.append(f"del __mod_{mod}")
 
@@ -164,7 +163,6 @@ def write_inits_with_type_loader(base_dir: str | Path, extra_globals: list[str] 
         # Build final content
         double_line = "\n\n"
         content = f"""{GENERATED_HEADER}\
-{loader_import}\n
 {imports_block}\n\n
 {wrap_exported_block}\n
 {all_line + double_line if all_line else ""}\
@@ -190,7 +188,7 @@ if sys.version_info < (3, 11):
 else:
     from typing import Self
 
-from .loader import loader, LazyLoadModel, _LOAD_LAZY_FIELD, _LOAD_TYPES_ON_INIT
+from .loader import LazyLoadModel, _LOAD_LAZY_FIELD, _LOAD_TYPES_ON_INIT
 from .const import *
 
 from {module_name}.api_{meta_version}.io.k8s.apimachinery.pkg.apis.meta import ObjectMeta, ListMeta
@@ -199,7 +197,6 @@ from {module_name}.api_{meta_version}.io.k8s.apimachinery.pkg.apis.meta import O
 _DYNAMIC_CLASS_VARS = ["apiVersion", "kind"]
 
 
-@loader
 @dataclass(slots=True, kw_only=True, frozen=True)
 class K8sResource(LazyLoadModel):
     apiVersion: ClassVar[str]

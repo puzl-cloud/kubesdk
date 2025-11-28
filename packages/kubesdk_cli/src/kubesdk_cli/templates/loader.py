@@ -274,80 +274,6 @@ def _evaluate_value(field_type: Any, field_value: Any, use_lazy: bool = False) -
         raise
 
 
-def loader(cls):
-    """
-    A decorator for dataclasses to automatically decode fields during initialization
-    based on the metadata configuration and typing.
-
-    This decorator intercepts the initialization arguments and applies the specified
-    decoder functions (if any) from the field metadata before passing the arguments
-    to the original ``__init__`` method.
-
-    Example:
-        >>> from datetime import datetime
-        >>>
-        >>> @loader
-        >>> @dataclass
-        >>> class ExampleClass:
-        ...     created_at: datetime =
-        ...         field(metadata={
-        ...             "encoder":
-        ...             lambda date: date.isoformat("T").replace("+00:00", "Z") if isinstance(date, datetime) else date,
-        ...             "decoder":
-        ...             lambda iso_date: datetime.fromisoformat(iso_date) if isinstance(iso_date, str) else iso_date
-        ...         })
-    """
-    original_init = cls.__init__
-
-    def __init__(self, *args, **kwargs):
-        new_kw = {}
-        supports_lazy = _supports_lazy_load(self)
-        lazy_requested = kwargs.get(_LOAD_LAZY_FIELD)
-        should_use_lazy = supports_lazy and lazy_requested
-
-        if not should_use_lazy:
-            if not kwargs.get(_LOAD_TYPES_ON_INIT):
-                return original_init(self, *args, **kwargs)
-
-            all_fields = fields(self.__class__)
-            type_hints = get_type_hints(self.__class__)
-            for f in all_fields:
-                if not f.init or f.name not in kwargs:
-                    continue
-
-                if "decoder" in f.metadata:
-                    try:
-                        kwargs[f.name] = _evaluate_field_by_meta(kwargs[f.name], f.metadata)
-                        continue
-                    except ValueError as e:
-                        logging.error(f"Got invalid decoder for {f.name} in class {self.__class__.__name__}. "
-                                      f"Value was passed as is. Error: {e}")
-                        pass
-
-                field_type = type_hints.get(f.name, f.type)
-                if any(field_type is scalar for scalar in SCALAR_TYPES):
-                    continue
-                kwargs[f.name] = _evaluate_value(field_type, kwargs[f.name], use_lazy=False)
-            new_kw = {k: v for k, v in kwargs.items() if k != _LOAD_LAZY_FIELD}
-        else:
-            for k, v in kwargs.items():
-                if k == _LOAD_TYPES_ON_INIT:
-                    continue
-                new_kw[k] = v if type(v) not in [list, dict] else None
-            new_kw |= {_LAZY_SRC_FIELD: kwargs, _LOAD_LAZY_FIELD: True}
-
-        return original_init(self, *args, **new_kw)
-
-    # Ensure subclasses use the lazy-aware equality/hash from the base
-    if issubclass(cls, LazyLoadModel):
-        cls.__eq__ = LazyLoadModel.__eq__
-        # Keep or drop this depending on whether you need hashing
-        cls.__hash__ = LazyLoadModel.__hash__
-
-    cls.__init__ = __init__
-    return cls
-
-
 def k8s_timestamp_field(**kwargs) -> Field:
     return field(**kwargs, metadata={
         "decoder": lambda iso_date: datetime.fromisoformat(iso_date) if type(iso_date) is str else iso_date,
@@ -372,17 +298,83 @@ def _to_immutable(v: Any) -> Any:
         return repr(v)
 
 
-@dataclass(slots=True, kw_only=True, frozen=True)
-class LazyLoadModel:
+class _LazyLoadMeta(type):
     """
-    This model supports lazy loading of complex nested types avoiding unnecessary heavy recursions in @loader.
+    A metaclass for dataclasses to automatically decode fields during initialization
+    based on the metadata configuration and typing.
+
+    This metaclass intercepts the initialization arguments and applies the specified
+    decoder functions (if any) from the field metadata before passing the arguments
+    to the original ``__init__`` method.
+    """
+    def __call__(cls, *args, **kwargs):
+        new_kw: Dict[str, Any] = {}
+        supports_lazy = issubclass(cls, LazyLoadModel)
+        lazy_requested = kwargs.get(_LOAD_LAZY_FIELD)
+        should_use_lazy = supports_lazy and lazy_requested
+        
+        if not getattr(cls, "__lazy_methods_patched", False):
+            cls.__eq__ = LazyLoadModel.__eq__
+            cls.__hash__ = LazyLoadModel.__hash__
+            cls.__lazy_methods_patched = True
+
+        if not should_use_lazy:
+            if not kwargs.get(_LOAD_TYPES_ON_INIT):
+                return super().__call__(*args, **kwargs)
+
+            all_fields = fields(cls)
+            type_hints = get_type_hints(cls)
+            for f in all_fields:
+                if not f.init or f.name not in kwargs:
+                    continue
+
+                # metadata-based decoder
+                if "decoder" in f.metadata:
+                    try:
+                        kwargs[f.name] = _evaluate_field_by_meta(kwargs[f.name], f.metadata)
+                        continue
+                    except ValueError as e:
+                        logging.error(
+                            f"Got invalid decoder for {f.name} in class {cls.__name__}. "
+                            f"Value was passed as is. Error: {e}"
+                        )
+
+                field_type = type_hints.get(f.name, f.type)
+                if any(field_type is scalar for scalar in SCALAR_TYPES):
+                    continue
+                kwargs[f.name] = _evaluate_value(field_type, kwargs[f.name], use_lazy=False)
+
+            new_kw = {
+                k: v
+                for k, v in kwargs.items()
+                if k not in (_LOAD_LAZY_FIELD, _LOAD_TYPES_ON_INIT)
+            }
+        else:
+            # Lazy path: store original kwargs as _lazy_src, set list/dict fields to None
+            for k, v in kwargs.items():
+                if k == _LOAD_TYPES_ON_INIT:
+                    continue
+                new_kw[k] = v if type(v) not in [list, dict] else None
+
+            new_kw |= {_LAZY_SRC_FIELD: kwargs, _LOAD_LAZY_FIELD: True}
+
+        return super().__call__(*args, **new_kw)
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class LazyLoadModel(metaclass=_LazyLoadMeta):
+    """
+    This model supports lazy loading of complex nested types avoiding unnecessary heavy recursions.
     """
     _lazy_src: Dict = field(default_factory=dict)
     _lazy: bool = field(default=False)
 
     @classmethod
     def from_dict(cls, src: dict[str, Any], lazy: bool = True) -> Self:
-        return cls(**src | {_LOAD_LAZY_FIELD: lazy, _LOAD_TYPES_ON_INIT: True})
+        params = dict(src)
+        params[_LOAD_LAZY_FIELD] = lazy
+        params[_LOAD_TYPES_ON_INIT] = True
+        return cls(**params)
 
     def __getattribute__(self, name: str) -> Any:
         """

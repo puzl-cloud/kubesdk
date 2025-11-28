@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import sys
+import asyncio
+import logging
+import json
 from enum import Enum
 from typing import Type, Callable, overload, Literal, Sequence, Any, Mapping
 from inspect import isclass
 from dataclasses import dataclass, field, replace, fields
-import asyncio
-import logging
-import json
+from collections.abc import AsyncIterator
 
 if sys.version_info >= (3, 11):
     from http import HTTPMethod
@@ -23,8 +24,9 @@ else:
 
 import aiohttp
 
+from kube_models.loader import LazyLoadModel
 from kube_models import get_model
-from kube_models.const import PatchRequestType
+from kube_models.const import PatchRequestType, StrEnum
 from kube_models.resource import K8sResource, K8sResourceList
 from kube_models.api_v1.io.k8s.apimachinery.pkg.apis.meta.v1 import DeleteOptions, Status
 
@@ -43,7 +45,7 @@ class APIRequestProcessingConfig:
     http_timeout: int = field(default=30)
     backoff_limit: int = field(default=3)
     backoff_interval: int | Callable = field(default=5)
-    retry_codes: Sequence[int] = field(default_factory=list)
+    retry_statuses: Sequence[int | Type[RESTAPIError]] = field(default_factory=list)
 
 
 @dataclass(kw_only=True, frozen=True)
@@ -52,7 +54,7 @@ class APIRequestLoggingConfig:
     on_success: bool = field(default=False)
     request_body: bool = field(default=False)
     response_body: Callable | bool = field(default=False)
-    not_error_codes: Sequence[int] = field(default_factory=list)
+    not_error_statuses: Sequence[int | Type[RESTAPIError]] = field(default_factory=list)
 
     def should_log_response(self, response: Any) -> bool:
         if callable(self.response_body):
@@ -139,7 +141,7 @@ class K8sQueryParams:
     labelSelector: QueryLabelSelector | None = None
     limit: int | None = None
     resourceVersion: str | None = None
-    timeoutSeconds: int = field(default=30)
+    timeoutSeconds: int | None = None
     watch: bool | None = None
     allowWatchBookmarks: bool | None = None
     gracePeriodSeconds: int | None = None
@@ -191,30 +193,25 @@ _DEFAULT_PROCESSING = APIRequestProcessingConfig()
 _DEFAULT_LOGGING = K8sAPIRequestLoggingConfig()
 
 
-@authenticated
-async def rest_api_request(
+async def _raw_api_request(
         method: HTTPMethod,
         url: str,
-        data: dict[str, str | int | bool | list | dict] | list[dict[str, str | int | bool | list | dict]] = None,
+        session: aiohttp.ClientSession,
         *,
+        data: dict[str, str | int | bool | list | dict] | list[dict[str, str | int | bool | list | dict]] = None,
         params: list[tuple[str, str]] = None,
         headers: dict[str, str] = None,
-        _context: APIContext = None,
         processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
-        log: APIRequestLoggingConfig = _DEFAULT_LOGGING,
-        return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None
-) -> dict | list | RESTAPIError:
-    headers, return_api_exceptions = headers or {}, return_api_exceptions or []
+        log: APIRequestLoggingConfig = _DEFAULT_LOGGING
+) -> aiohttp.ClientResponse:
+    headers = headers or {}
     headers.setdefault("Accept", "application/json")
     api_name = log.api_name
     max_attempts = min(1, processing.backoff_limit)
-    error_msg = f"{api_name} API request failed"
-    success_msg = f"{api_name} API request has been processed"
     request_timeout = aiohttp.ClientTimeout(total=processing.http_timeout)
     extra_log = {
         "API": api_name,
         "url": url,
-        "server": _context.server,
         "method": method,
         "request": data if log.request_body else None
     }
@@ -224,65 +221,36 @@ async def rest_api_request(
     while attempt < max_attempts:
         try:
             attempt += 1
-            async with _context.session.request(
-                    method,
-                    url,
-                    params=params,
-                    headers=headers,
-                    json=data,
-                    timeout=request_timeout,
-                    allow_redirects=False) as response:
-                if response.status == 204:
-                    return {}
+            response = await session.request(
+                method,
+                url,
+                params=params,
+                headers=headers,
+                json=data,
+                timeout=request_timeout,
+                allow_redirects=False,
+                read_bufsize=None  # take from session
+            )
 
-                response_data, is_json = None, True
+            # Check if we have to retry forcibly
+            exc_cls = ERROR_TYPE_BY_CODE.get(response.status)
+            to_retry = processing.retry_statuses
+            if (response.status in to_retry or exc_cls in to_retry) and attempt < max_attempts:
+                _log.debug(
+                    f"Retrying request due to {response.status} response status",
+                    extra=extra_log | {"attempt": attempt, "status": response.status}
+                )
+                # Drain body so the connection can be reused
                 try:
-                    response_data = await response.json()
-                    is_json = True
-                except (json.JSONDecodeError, aiohttp.ContentTypeError):
-                    response_data = await response.text()
-                    is_json = False
+                    await response.read()
+                finally:
+                    response.release()
+                await asyncio.sleep(processing.backoff_interval)
+                continue
 
-                extra_log |= {
-                    "attempt": attempt,
-                    "status": response.status,
-                    "response": response_data if log.should_log_response(response_data) else None
-                }
-                if not is_json:
-                    _log.error(f"Received non-JSON response from {api_name} API", extra=extra_log)
-                    response_data = {"data": response_data}
+            # We never parse response here because we don't know if it was stream or REST
+            return response
 
-                # Check if we have to retry forcibly
-                exc_cls = ERROR_TYPE_BY_CODE.get(response.status) or RESTAPIError
-                if response.status in processing.retry_codes:
-                    if attempt < max_attempts:
-                        _log.debug(f"Retrying request due to {response.status} response status", extra=extra_log)
-                        await asyncio.sleep(processing.backoff_interval)
-                        continue
-                    raise exc_cls(response.status, f"{error_msg}, max_attempts={max_attempts} reached", response_data)
-
-                # Check if we have to retry due to non-ok status code
-                if response.status >= 300:
-                    api_error = exc_cls(response.status, error_msg, response_data)
-                    extra_log["error"] = str(api_error.status)
-                    if response.status not in log.not_error_codes:
-                        _log_level = _log.error
-                    elif log.on_success:
-                        _log_level = _log.info
-                    else:
-                        _log_level = _log.debug
-                    _log_level(error_msg, extra=extra_log)
-                    if response.status in return_api_exceptions \
-                            or any(isinstance(exc, RESTAPIError) and exc.status == response.status
-                                   for exc in return_api_exceptions):
-                        return api_error
-                    raise api_error
-
-                if log.on_success:
-                    _log.info(success_msg, extra=extra_log)
-                else:
-                    _log.debug(success_msg, extra=extra_log | {"response": response_data})
-                break
         except asyncio.TimeoutError as exc:
             msg = f"API request failed by {request_timeout.total}sec timeout"
             msg = f"{msg}. Will be retried." if attempt < max_attempts else msg
@@ -293,7 +261,177 @@ async def rest_api_request(
             _log.error("API request failed", extra=extra_log | {"error": str(exc), "attempt": attempt})
             raise RuntimeError(f"{api_name} API connection has been broken unexpectedly.")
 
-    return response_data
+    # For type-checkers
+    raise RuntimeError("What are you doing here? Check the _raw_api_request() code!")
+
+
+async def __load_aiohttp_response(response: aiohttp.ClientResponse) -> dict | list | str:
+    try:
+        return await response.json()
+    except (json.JSONDecodeError, aiohttp.ContentTypeError):
+        return await response.text()
+
+
+@authenticated
+async def rest_api_request(
+        method: HTTPMethod,
+        url: str,
+        data: dict[str, str | int | bool | list | dict] | list[dict[str, str | int | bool | list | dict]] = None,
+        *,
+        params: list[tuple[str, str]] = None,
+        headers: dict[str, str] = None,
+        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
+        log: APIRequestLoggingConfig = _DEFAULT_LOGGING,
+        return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None,
+        _context: APIContext = None
+) -> dict | list | RESTAPIError:
+    """Used for all non-watch requests."""
+    headers, return_api_exceptions = headers or {}, return_api_exceptions or []
+    headers.setdefault("Accept", "application/json")
+    max_attempts = min(1, processing.backoff_limit)
+    error_msg = f"{log.api_name} API request failed"
+    success_msg = f"{log.api_name} API request has been processed"
+    extra_log = {
+        "API": log.api_name,
+        "url": url,
+        "server": _context.server,
+        "method": method,
+        "request": data if log.request_body else None
+    }
+    _log.debug(f"Requesting {log.api_name} API", extra=extra_log)
+
+    response = await _raw_api_request(
+        method=method,
+        url=url,
+        session=_context.session,
+        data=data,
+        params=params,
+        headers=headers,
+        processing=processing,
+        log=log
+    )
+
+    async with response:
+        if response.status == 204:
+            # It was DELETE or other non-body response
+            return {}
+
+        response_data = await __load_aiohttp_response(response)
+        is_json = type(response_data) is not str
+        extra_log |= {
+            "status": response.status,
+            "response": response_data if log.should_log_response(response_data) else None
+        }
+        if not is_json:
+            _log.error(f"Received non-JSON response from {log.api_name} API", extra=extra_log)
+            response_data = {"data": response_data}
+
+        # Check if we have to retry forcibly
+        exc_cls = ERROR_TYPE_BY_CODE.get(response.status) or RESTAPIError
+        if response.status in processing.retry_statuses or exc_cls in processing.retry_statuses:
+            raise exc_cls(response.status, f"{error_msg}, max_attempts={max_attempts} reached", response_data)
+
+        # Check if we have to return or raise
+        if response.status >= 300:
+            api_error = exc_cls(response.status, error_msg, response_data)
+            extra_log["error"] = str(api_error.status)
+            if response.status not in log.not_error_statuses and exc_cls not in log.not_error_statuses:
+                _log_level = _log.error
+            elif log.on_success:
+                _log_level = _log.info
+            else:
+                _log_level = _log.debug
+            _log_level(error_msg, extra=extra_log)
+            if response.status in return_api_exceptions \
+                    or any(isinstance(exc, RESTAPIError) and exc.status == response.status
+                           for exc in return_api_exceptions):
+                return api_error
+            raise api_error
+
+        if log.on_success:
+            _log.info(success_msg, extra=extra_log)
+        else:
+            _log.debug(success_msg, extra=extra_log | {"response": response_data})
+
+        return response_data
+
+
+@authenticated
+async def stream_api_request(
+        method: HTTPMethod,
+        url: str,
+        *,
+        params: list[tuple[str, str]] = None,
+        headers: dict[str, str] = None,
+        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
+        log: APIRequestLoggingConfig = _DEFAULT_LOGGING,
+        _context: APIContext = None
+) -> AsyncIterator[dict[str, Any]]:
+    api_name = f"{log.api_name} stream API"
+    error_msg = f"{api_name} request failed"
+    extra_log = {
+        "API": api_name,
+        "url": url,
+        "server": _context.server,
+        "method": method
+    }
+    _log.debug(f"Requesting {api_name}", extra=extra_log)
+
+    response = await _raw_api_request(
+        method=method,
+        url=url,
+        session=_context.session,
+        data=None,
+        params=params,
+        headers=headers,
+        processing=processing,
+        log=log
+    )
+
+    async with response:
+        if response.status == 204:
+            # We should not get it with watch actually
+            return
+
+        if response.status >= 300:
+            exc_cls = ERROR_TYPE_BY_CODE.get(response.status) or RESTAPIError
+
+            # Load the whole response, nothing to stream
+            response_data = await __load_aiohttp_response(response)
+            is_json = type(response_data) is not str
+            extra_log |= {
+                "status": response.status,
+                "response": response_data if log.should_log_response(response_data) else None
+            }
+            if not is_json:
+                _log.error(f"Received non-JSON response from {api_name}", extra=extra_log)
+                response_data = {"data": response_data}
+
+            api_error = exc_cls(response.status, error_msg, response_data)
+            extra_log["error"] = str(api_error.status)
+            if response.status not in log.not_error_statuses and exc_cls not in log.not_error_statuses:
+                _log_level = _log.error
+            elif log.on_success:
+                _log_level = _log.info
+            else:
+                _log_level = _log.debug
+            _log_level(error_msg, extra=extra_log)
+            raise api_error
+
+        while True:
+            raw_line = await response.content.readline()
+            if not raw_line:
+                # EOF
+                break
+
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            try:
+                yield json.loads(line.decode("utf-8"))
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Unable to decode k8s watch event JSON line: {e}. Offending line: {line!r}") from e
 
 
 def __resource_is_namespaced(resource: Type[K8sResource] | K8sResource) -> bool:
@@ -323,11 +461,11 @@ def __build_request_url(resource: Type[K8sResource] | K8sResource, name: str = N
 
 
 @overload
-def __decode_k8s_api_response(response: RESTAPIError) -> RESTAPIError[Status]: ...
+def __decode_k8s_rest_api_response(response: RESTAPIError) -> RESTAPIError[Status]: ...
 @overload
-def __decode_k8s_api_response(response: list | dict) -> K8sResource: ...
+def __decode_k8s_rest_api_response(response: list | dict) -> K8sResource: ...
 
-def __decode_k8s_api_response(response: list | dict | RESTAPIError):
+def __decode_k8s_rest_api_response(response: list | dict | RESTAPIError):
     if isinstance(response, RESTAPIError):
         empty_status_err = "Empty Status object has been added to the response."
         if isinstance(response.response, dict):
@@ -446,12 +584,12 @@ async def get_k8s_resource(
             log=log,
             return_api_exceptions=return_api_exceptions
         )
-        return __decode_k8s_api_response(response)
+        return __decode_k8s_rest_api_response(response)
     except Exception as e:
         if log.errors_as_critical or isinstance(e, TypeError):
             _log.critical(f"Error happened while attempting to {method} resource {resource.apiVersion}: {e}")
         if isinstance(e, RESTAPIError):
-            raise __decode_k8s_api_response(e)
+            raise __decode_k8s_rest_api_response(e)
         raise
 
 #
@@ -509,7 +647,7 @@ async def create_k8s_resource(
                 log=log,
                 return_api_exceptions=return_api_exceptions
             )
-            decoded_resp = __decode_k8s_api_response(response)
+            decoded_resp = __decode_k8s_rest_api_response(response)
 
             # Do endless attempts for 409 quota errors because of this bug
             #  https://github.com/kubernetes/kubernetes/issues/67761
@@ -522,7 +660,7 @@ async def create_k8s_resource(
             if log.errors_as_critical or isinstance(e, TypeError):
                 _log.critical(f"Error happened while attempting to {method} resource {resource.apiVersion}: {e}")
             if isinstance(e, RESTAPIError):
-                raise __decode_k8s_api_response(e)
+                raise __decode_k8s_rest_api_response(e)
             raise
         
     raise  # for the bugged pycharm typechecker; will never happen
@@ -739,13 +877,13 @@ async def update_k8s_resource(
             log=log,
             return_api_exceptions=return_api_exceptions
         )
-        return __decode_k8s_api_response(response)
+        return __decode_k8s_rest_api_response(response)
 
     except Exception as e:
         if log.errors_as_critical or isinstance(e, TypeError):
             _log.critical(f"Error happened while attempting to {method} resource {resource.apiVersion}: {e}")
         if isinstance(e, RESTAPIError):
-            raise __decode_k8s_api_response(e)
+            raise __decode_k8s_rest_api_response(e)
         raise
 
 
@@ -836,12 +974,12 @@ async def delete_k8s_resource(
             log=log,
             return_api_exceptions=return_api_exceptions
         )
-        return __decode_k8s_api_response(response)
+        return __decode_k8s_rest_api_response(response)
     except Exception as e:
         if log.errors_as_critical or isinstance(e, TypeError):
             _log.critical(f"Error happened while attempting to {method} resource {resource.apiVersion}: {e}")
         if isinstance(e, RESTAPIError):
-            raise __decode_k8s_api_response(e)
+            raise __decode_k8s_rest_api_response(e)
         raise
 
 
@@ -863,8 +1001,8 @@ async def create_or_update_k8s_resource(
     # it will return 403 instead of 409 even if resource with this name exists.
     # ToDo: Catch ResourceQuota Status text specifically to avoid retrying with no permissions
     create_return_codes, update_return_codes = [403, 409], [404]
-    create_log = replace(log, not_error_codes=create_return_codes)
-    update_log = replace(log, not_error_codes=update_return_codes)
+    create_log = replace(log, not_error_statuses=create_return_codes)
+    update_log = replace(log, not_error_statuses=update_return_codes)
     attempts, max_attempts = 0, 3
     while attempts < max_attempts:
         attempts += 1
@@ -896,3 +1034,63 @@ async def create_or_update_k8s_resource(
                 await asyncio.sleep(2)
 
     raise  # for the bugged pycharm typechecker; will never happen
+
+
+#
+# WATCH
+#
+class WatchEventType(StrEnum):
+    ADDED = "ADDED"
+    MODIFIED = "MODIFIED"
+    DELETED = "DELETED"
+    BOOKMARK = "BOOKMARK"
+    ERROR = "ERROR"
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class K8sResourceEvent(LazyLoadModel, Generic[ResourceT]):
+    type: WatchEventType
+    object: ResourceT | Status
+
+
+def __decode_k8s_watch_event(event: dict):
+    return K8sResourceEvent(
+        type=event.get("type"), object=__decode_k8s_rest_api_response(dict(event.get("object") or {})))
+
+
+async def watch_k8s_resources(
+        resource: Type[ResourceT],
+        name: str | None = None,
+        namespace: str | None = None,
+        *,
+        server: str | None = None,
+        params: K8sQueryParams | None = None,
+        headers: dict[str, str] | None = None,
+        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
+        log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
+) -> AsyncIterator[K8sResourceEvent[ResourceT]]:
+    """
+    Example:
+        async for event in watch_k8s_resources(Pod, namespace="default"):
+            print(event.type, event.object.metadata.name)
+    """
+    method = HTTPMethod.GET
+    params = params or K8sQueryParams()
+    try:
+        stream = stream_api_request(
+            method=method,
+            url=f"{server.strip('/') if server else ''}/{__build_request_url(resource, name, namespace)}",
+            params=replace(params, watch=True).to_http_params(),
+            headers=headers,
+            processing=processing,
+            log=log
+        )
+        async for event in stream:
+            yield __decode_k8s_watch_event(event)
+    except Exception as e:
+        if log.errors_as_critical or isinstance(e, TypeError):
+            _log.critical(f"Error happened while attempting to {method} resource {resource.apiVersion}: {e}")
+        if isinstance(e, RESTAPIError):
+            raise __decode_k8s_rest_api_response(e)
+        raise
+    
