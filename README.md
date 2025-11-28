@@ -21,7 +21,7 @@ The core client library, which you install and use in your project.
 
 ## `kubesdk-models`
 
-Pre-generated Python models for all upstream Kubernetes APIs, for every Kubernetes version **1.23+**. Separate models package gives you ability to use latest client version with legacy Kubernetes APIs.
+Pre-generated Python models for all upstream Kubernetes APIs, for every Kubernetes version **1.23+**. Separate models package gives you ability to use latest client version with legacy Kubernetes APIs and vice versa.
 
 ## `kubesdk-cli`
 
