@@ -23,6 +23,8 @@ The core client library, which you install and use in your project.
 
 Pre-generated Python models for all upstream Kubernetes APIs, for every Kubernetes version **1.23+**. Separate models package gives you ability to use latest client version with legacy Kubernetes APIs and vice versa.
 
+You can find the latest generated models [here](https://github.com/puzl-cloud/kube-models). They are automatically uploaded to an external repository to avoid increasing the size of the main `kubesdk` repo.
+
 ## `kubesdk-cli`
 
 CLI that generates models from a live cluster or OpenAPI spec, including your own CRDs.
