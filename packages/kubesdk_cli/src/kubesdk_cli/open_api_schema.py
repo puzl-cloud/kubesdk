@@ -93,7 +93,7 @@ def download_open_api_schema(url: str, headers: Dict[str, str] = None, out_dir: 
     """
 
     url = f"{url.strip('/')}/openapi/v3"
-    out_dir = Path(out_dir).resolve()
+    out_dir = Path(out_dir).expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     session = requests.Session()
     session.verify = not skip_tls

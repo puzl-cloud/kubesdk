@@ -93,7 +93,7 @@ def write_inits(base_dir: str | Path, extra_globals: list[str] = None) -> None:
     logging.info(f"Writing __init__ for each submodule...")
 
     import os  # local import to keep function self-contained
-    base = Path(base_dir).resolve()
+    base = Path(base_dir).expanduser().resolve()
 
     extra_globals = extra_globals or []
     # loader_import: str = f"from {base.name}.loader import loader as __loader"
@@ -173,7 +173,7 @@ def write_inits(base_dir: str | Path, extra_globals: list[str] = None) -> None:
 
 
 def write_base_resource_py(base_dir: str | Path, module_name: str, meta_version: str):
-    base = Path(base_dir).resolve()
+    base = Path(base_dir).expanduser().resolve()
     resource_py_path = base / "_k8s_resource_base.py"
     logging.info(f"Writing base resource models at {resource_py_path}")
 
@@ -362,7 +362,7 @@ async def generate_dataclasses_from_url(
         subdir.mkdir(parents=True, exist_ok=True)
         (subdir / "__init__.py").touch(exist_ok=True)
         tasks.append(
-            generate_for_schema(subdir.resolve(), python_version, templates, module_name=module_name,
+            generate_for_schema(subdir.expanduser().resolve(), python_version, templates, module_name=module_name,
                                 url=url, http_headers=http_headers))
 
     await asyncio.gather(*tasks, return_exceptions=True)
@@ -399,7 +399,7 @@ async def generate_dataclasses_from_dir(
         subdir.mkdir(parents=True, exist_ok=True)
         (subdir / "__init__.py").touch(exist_ok=True)
         tasks.append(
-            generate_for_schema(subdir.resolve(), python_version, templates, module_name=module_name,
+            generate_for_schema(subdir.expanduser().resolve(), python_version, templates, module_name=module_name,
                                 from_file=from_dir / api_schema_file))
 
     await asyncio.gather(*tasks, return_exceptions=True)

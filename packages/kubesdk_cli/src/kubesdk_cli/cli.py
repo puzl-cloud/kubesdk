@@ -41,10 +41,10 @@ def cli() -> None:
         "You must either pass --url of your Kubernetes endpoint or --from-dir with the downloaded OpenAPI schema"
 
     headers = parse_headers(args.http_headers) if args.http_headers else {}
-    from_dir = Path(args.from_dir).resolve() if args.from_dir else None
+    from_dir = Path(args.from_dir).expanduser().resolve() if args.from_dir else None
     module_name = args.module_name
-    models_path = Path(args.output).resolve()
-    templates_path = Path(__file__).resolve().parent / "templates"
+    models_path = Path(args.output).expanduser().resolve()
+    templates_path = Path(__file__).expanduser().resolve().parent / "templates"
     extra_globals = [
         "loader.py",
         "const.py",

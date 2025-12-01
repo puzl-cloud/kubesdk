@@ -5,6 +5,7 @@ if not logging.getLogger().hasHandlers():
         def format(self, record):
             s = super().format(record)
             base = set(logging.makeLogRecord({}).__dict__)
+            base.add("message")
             extras = [f"{k}={v}" for k, v in record.__dict__.items() if k not in base]
             return s + (" | " + " ".join(extras) if extras else "")
 
