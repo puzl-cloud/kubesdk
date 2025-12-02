@@ -72,8 +72,10 @@ def _connection_info_from_kube_config(kubeconfig: KubeConfig) -> ConnectionInfo 
     provider_token = ((user.get("auth-provider") or {}).get("config") or {}).get("access-token")
     
     normalized_cluster_data = normalize_dict_keys(cluster)
+    normalized_client_data = normalize_dict_keys(user)
     client_info = {
-        f.name: user[f.name] for f in fields(ClientInfo) if f.name in user
+        f.name: normalized_client_data[f.name] for f in fields(ClientInfo)
+        if f.name in normalized_client_data
     }
     client_info["token"] = client_info.get("token") or provider_token
 
