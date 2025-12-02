@@ -12,7 +12,7 @@ import ssl
 import threading
 import tempfile
 from contextvars import ContextVar
-from typing import Any, Callable, Generic, TypeVar, cast, Awaitable, AsyncIterable
+from typing import Any, Callable, Generic, TypeVar, cast, Awaitable, AsyncIterable, overload, ParamSpec, AsyncIterator
 
 import aiohttp
 
@@ -159,7 +159,6 @@ def authenticated(fn: _F) -> _F:
     return cast(_F, gen_wrapper) if is_generator else cast(_F, wrapper)
 
 
-
 class _Worker:
     """
     A worker owns an asyncio event loop and a list of sessions created on that loop.
@@ -211,12 +210,12 @@ class _Worker:
             if asyncio.iscoroutinefunction(close):
                 try:
                     await close()
-                except Exception:
+                except BaseException:
                     pass
             elif callable(close):
                 try:
                     close()
-                except Exception:
+                except BaseException:
                     pass
         self._sessions.clear()
 
@@ -229,6 +228,11 @@ class _Worker:
             def _stop(loop): loop.stop()
             self._loop.call_soon_threadsafe(_stop, self._loop)
             self._thread.join(timeout=5)
+
+
+_P = ParamSpec("_P")
+_T = TypeVar("_T")
+_ItemT = TypeVar("_ItemT")
 
 
 class APIContext:
@@ -390,14 +394,15 @@ class APIContext:
             raise RuntimeError("APIContext.loop used outside APIContext.call()")
         return self._workers[worker_idx].loop
 
+    @overload
+    async def call(self, fn: Callable[_P, Awaitable[T]], *args: _P.args, **kwargs: _P.kwargs) -> T: ...
+    @overload
+    async def call(self, fn: Callable[_P, AsyncIterator[_ItemT]], *args: _P.args, **kwargs: _P.kwargs) \
+            -> AsyncIterator[_ItemT]: ...
+
     async def call(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Awaitable | AsyncIterable:
         """
-        Run user async function `fn` on one worker's loop with one specific session bound.
-
-        Inside `fn`, `_context` will be `self`, and `_context.session` / `_context.loop`
-        refer to the chosen worker+session.
-
-        This is what any consumer (e.g. @authenticated) should use to execute `fn` safely.
+        Run user async function or async generator `fn` on one worker's loop with one specific session bound.
         """
         if self.closed:
             raise RuntimeError("APIContext is closed")
@@ -417,72 +422,82 @@ class APIContext:
             fut = asyncio.run_coroutine_threadsafe(_runner(), worker.loop)
             return await asyncio.wrap_future(fut)
 
-        async def _create_gen():
-            """Create the underlying async generator on the worker loop."""
-            async def _runner_make():
-                token = self._current_addr.set((worker_idx, session_idx))
-                try:
-                    return fn(*args, **kwargs, _context=self)
-                finally:
-                    self._current_addr.reset(token)
+        caller_loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
 
-            _fut = asyncio.run_coroutine_threadsafe(_runner_make(), worker.loop)
-            return await asyncio.wrap_future(_fut)
+        async def _create_gen_on_worker():
+            token = self._current_addr.set((worker_idx, session_idx))
+            try:
+                return fn(*args, **kwargs, _context=self)
+            finally:
+                self._current_addr.reset(token)
 
-        async def _anext(agen):
-            """Advance the async generator by one item on the worker loop."""
-            async def _runner_next():
-                token = self._current_addr.set((worker_idx, session_idx))
-                try:
-                    return await agen.__anext__()
-                finally:
-                    self._current_addr.reset(token)
+        # Create async generator on the worker loop
+        agen_fut = asyncio.run_coroutine_threadsafe(_create_gen_on_worker(), worker.loop)
+        agen = await asyncio.wrap_future(agen_fut)
+        tag_item, tag_err, tag_eof = "item", "err", "eof"
 
-            _fut = asyncio.run_coroutine_threadsafe(_runner_next(), worker.loop)
-            return await asyncio.wrap_future(_fut)
+        async def driver():
+            """
+            Runs entirely on the worker loop:
+              async for item in agen:
+                  push item into caller's queue
+            """
+            token = self._current_addr.set((worker_idx, session_idx))
+            try:
+                async for item in agen:
+                    # Push into caller-loop queue
+                    caller_loop.call_soon_threadsafe(queue.put_nowait, (tag_item, item))
 
-        async def _aclose(agen):
-            """Close the async generator on the worker loop."""
-            async def _runner_close():
-                token = self._current_addr.set((worker_idx, session_idx))
+                # End of stream
+                caller_loop.call_soon_threadsafe(queue.put_nowait, (tag_eof, None))
+
+            except BaseException as e:
+                # Propagate error to caller
+                caller_loop.call_soon_threadsafe(queue.put_nowait, (tag_err, e))
+
+            finally:
                 try:
                     await agen.aclose()
-                finally:
-                    self._current_addr.reset(token)
+                except BaseException:
+                    pass
+                self._current_addr.reset(token)
 
-            _fut = asyncio.run_coroutine_threadsafe(_runner_close(), worker.loop)
-            return await asyncio.wrap_future(_fut)
+        # Start the driver once on the worker loop
+        driver_future = asyncio.run_coroutine_threadsafe(driver(), worker.loop)
 
         async def _proxy():
             """
-            Async generator that the caller sees.
-                - Creates the real async generator on the worker loop
-                - Calls __anext__ on the worker loop for each iteration
-                - Re-raises exceptions
+            Async generator that the caller sees, running on the caller loop.
+
+            It consumes (tag, payload) from the queue.
+            On cancellation / break, it cancels the driver on the worker loop.
             """
-            agen = await _create_gen()
             try:
                 while True:
-                    try:
-                        item = await _anext(agen)
-                    except StopAsyncIteration:
+                    tag, payload = await queue.get()
+                    if tag == tag_item:
+                        yield payload
+                    elif tag == tag_err:
+                        raise payload
+                    elif tag == tag_eof:
                         break
-                    yield item
             finally:
+                # Consumer stopped early or loop cancelled
+                driver_future.cancel()
                 try:
-                    await _aclose(agen)
-                except Exception:
-                    # We don't care if close fails during shutdown
+                    await asyncio.wrap_future(driver_future)
+                except BaseException:
+                    # We don't care about any driver errors here
                     pass
 
-        # We return an async iterator here
         return _proxy()
 
     @property
     def closed(self) -> bool:
         return self._closed.is_set()
 
-    async def close(self) -> None:
+    def close(self) -> None:
         if self.closed:
             return
         self._closed.set()
