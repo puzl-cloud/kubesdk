@@ -245,11 +245,6 @@ from kube_models.api_v1.io.k8s.api.core.v1 import Secret
 async def sync_secrets_between_clusters(src_cluster: ServerInfo, dst_cluster: ServerInfo):
     src_ns, dst_ns = "default", "test-kubesdk"
     async for event in watch_k8s_resources(Secret, namespace=src_ns, server=src_cluster.server):
-        if event.type == WatchEventType.DELETED:
-            # Try to delete, skip if not found
-            await delete_k8s_resource(Secret, namespace=dst_ns, server=dst_cluster.server, return_api_exceptions=[404])
-            continue
-
         if event.type == WatchEventType.ERROR:
             status = event.object
             raise Exception(f"Failed to watch Secrets: {status.data}")
@@ -260,6 +255,12 @@ async def sync_secrets_between_clusters(src_cluster: ServerInfo, dst_cluster: Se
 
         # Sync Secret on any other event
         src_secret = event.object
+        if event.type == WatchEventType.DELETED:
+            # Try to delete, skip if not found
+            await delete_k8s_resource(
+                Secret, src_secret.metadata.name, dst_ns, server=dst_cluster.server, return_api_exceptions=[404])
+            continue
+
         dst_secret = replace(
             src_secret,
             metadata=replace(src_secret.metadata, namespace=dst_ns,
