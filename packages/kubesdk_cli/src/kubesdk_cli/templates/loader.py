@@ -312,7 +312,6 @@ class _LazyLoadMeta(type):
         supports_lazy = issubclass(cls, LazyLoadModel)
         lazy_requested = kwargs.get(_LOAD_LAZY_FIELD)
         should_use_lazy = supports_lazy and lazy_requested
-        
         if not getattr(cls, "__lazy_methods_patched", False):
             cls.__eq__ = LazyLoadModel.__eq__
             cls.__hash__ = LazyLoadModel.__hash__
@@ -323,8 +322,8 @@ class _LazyLoadMeta(type):
                 return super().__call__(*args, **kwargs)
 
             all_fields = fields(cls)
-            if not hasattr(cls, "__type_hints"):
-                cls.__type_hints = get_type_hints(cls)
+            if not hasattr(cls, "__lazy_type_hints"):
+                cls.__lazy_type_hints = get_type_hints(cls)
 
             for f in all_fields:
                 if not f.init or f.name not in kwargs:
@@ -341,7 +340,7 @@ class _LazyLoadMeta(type):
                             f"Value was passed as is. Error: {e}"
                         )
 
-                field_type = cls.__type_hints.get(f.name, f.type)
+                field_type = cls.__lazy_type_hints.get(f.name, f.type)
                 if any(field_type is scalar for scalar in SCALAR_TYPES):
                     continue
                 kwargs[f.name] = _evaluate_value(field_type, kwargs[f.name], use_lazy=False)
