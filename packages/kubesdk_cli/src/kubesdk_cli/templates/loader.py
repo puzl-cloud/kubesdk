@@ -323,7 +323,9 @@ class _LazyLoadMeta(type):
                 return super().__call__(*args, **kwargs)
 
             all_fields = fields(cls)
-            type_hints = get_type_hints(cls)
+            if not hasattr(cls, "__type_hints"):
+                cls.__type_hints = get_type_hints(cls)
+
             for f in all_fields:
                 if not f.init or f.name not in kwargs:
                     continue
@@ -339,7 +341,7 @@ class _LazyLoadMeta(type):
                             f"Value was passed as is. Error: {e}"
                         )
 
-                field_type = type_hints.get(f.name, f.type)
+                field_type = cls.__type_hints.get(f.name, f.type)
                 if any(field_type is scalar for scalar in SCALAR_TYPES):
                     continue
                 kwargs[f.name] = _evaluate_value(field_type, kwargs[f.name], use_lazy=False)
@@ -417,8 +419,14 @@ class LazyLoadModel(metaclass=_LazyLoadMeta):
                 pass
 
         if not decoded:
-            globalns = vars(sys.modules[self.__module__])
-            hints = get_type_hints(self.__class__, globalns=globalns, include_extras=True)
+            # Use cached type hints if available
+            cls = self.__class__
+            hints = getattr(cls, "__lazy_type_hints", None)
+            if hints is None:
+                globalns = vars(sys.modules[cls.__module__])
+                hints = get_type_hints(cls, globalns=globalns, include_extras=True)
+                setattr(cls, "__lazy_type_hints", hints)
+
             field_type = hints[name]
             field_value = _evaluate_value(field_type, src_value, use_lazy=self._lazy)
         object.__setattr__(self, name, field_value)
