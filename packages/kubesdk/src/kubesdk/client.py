@@ -187,7 +187,7 @@ class K8sAPIRequestLoggingConfig(APIRequestLoggingConfig):
     api_name: str = field(default="Kubernetes")
     response_body: Callable | bool = field(default=lambda response_json: response_json.get("kind") == "Status")
     errors_as_critical: bool = field(default=False)
-    
+
 
 _DEFAULT_PROCESSING = APIRequestProcessingConfig()
 _DEFAULT_LOGGING = K8sAPIRequestLoggingConfig()
@@ -438,7 +438,8 @@ def __resource_is_namespaced(resource: Type[K8sResource] | K8sResource) -> bool:
     return "/namespaces/{namespace}/" in resource.api_path_
 
 
-def __build_request_url(resource: Type[K8sResource] | K8sResource, name: str = None, namespace: str = None) -> str:
+def __build_request_url(resource: Type[K8sResource] | K8sResource, name: str = None, namespace: str = None,
+                        trim_name: bool = False) -> str:
     """
     `namespace` and `name` args have priority over the values in resource.metadata.
     """
@@ -447,6 +448,7 @@ def __build_request_url(resource: Type[K8sResource] | K8sResource, name: str = N
         resource: Type[K8sResource]  # for the bugged pycharm typechecker
     else:
         ns = namespace or resource.metadata.namespace
+        name = name or resource.metadata.name
 
     if __resource_is_namespaced(resource):
         if not ns:
@@ -457,7 +459,7 @@ def __build_request_url(resource: Type[K8sResource] | K8sResource, name: str = N
             raise ValueError(f"Resource {resource.apiVersion} is cluster scoped, "
                              f"but namespace {ns} was specified in the metadata")
         url = resource.api_path_
-    return f"{url.strip('/')}/{name}" if name else url
+    return f"{url.strip('/')}/{name}" if name and not trim_name else url
 
 
 @overload
@@ -639,7 +641,8 @@ async def create_k8s_resource(
         try:
             response = await rest_api_request(
                 method=method,
-                url=f"{server.strip('/') if server else ''}/{__build_request_url(resource, namespace=namespace)}",
+                url=f"{server.strip('/') if server else ''}/"
+                    f"{__build_request_url(resource, namespace=namespace, trim_name=True)}",
                 params=params.to_http_params() if params else None,
                 headers=headers,
                 data=resource.to_dict(),
@@ -662,7 +665,7 @@ async def create_k8s_resource(
             if isinstance(e, RESTAPIError):
                 raise __decode_k8s_rest_api_response(e)
             raise
-        
+
     raise  # for the bugged pycharm typechecker; will never happen
 
 
@@ -826,23 +829,23 @@ async def update_k8s_resource(
         elif built_from_latest:
             old_dict, new_dict = built_from_latest.to_dict(), resource.to_dict()
             json_patch = json_patch_from_diff(old_dict, new_dict)
-            
+
             # Exclude all paths which are not white-listed
             if paths:
                 allowed_ptrs = [p.json_path_pointer() for p in paths]
                 json_patch = [op for op in json_patch if "path" in op and _op_within_paths(op, allowed_ptrs)]
-            
+
             # Do nothing if no white-listed diff was found
             if not json_patch:
                 return built_from_latest
-            
+
             # Build strategic merge if we can
             if content_type == PatchRequestType.strategic_merge:
                 request_data = jsonpatch_to_smp(built_from_latest, json_patch)
             # Do jsonPatch otherwise
             else:
                 content_type = PatchRequestType.json
-                
+
                 # Guard lists and list items from being forced via `test` directives
                 if not ignore_list_conflicts:
                     json_patch = guard_lists_from_json_patch_replacement(json_patch, old_dict)
@@ -851,7 +854,7 @@ async def update_k8s_resource(
         # If we know paths to merge, pick them all
         elif paths:
             request_data = _build_partial_spec_for_paths(resource, paths)
-        
+
         # Give up, let k8s API merge as is
         else:
             request_data = resource.to_dict()
@@ -1000,9 +1003,8 @@ async def create_or_update_k8s_resource(
     # We catch 403 here too, because if there's ResourceQuota set, and it's drained,
     # it will return 403 instead of 409 even if resource with this name exists.
     # ToDo: Catch ResourceQuota Status text specifically to avoid retrying with no permissions
-    create_return_codes, update_return_codes = [403, 409], [404]
-    create_log = replace(log, not_error_statuses=create_return_codes)
-    update_log = replace(log, not_error_statuses=update_return_codes)
+    create_log = replace(log, not_error_statuses=[403, 409])
+    update_log = replace(log, not_error_statuses=[404])
     attempts, max_attempts = 0, 3
     while attempts < max_attempts:
         attempts += 1
@@ -1012,8 +1014,7 @@ async def create_or_update_k8s_resource(
                 server=server,
                 params=params,
                 headers=headers,
-                log=create_log,
-                return_api_exceptions=create_return_codes)
+                log=create_log)
             return response
         except ConflictError or ForbiddenError as e :
             try:
@@ -1025,8 +1026,7 @@ async def create_or_update_k8s_resource(
                     ignore_list_conflicts=ignore_list_conflicts,
                     params=params,
                     headers=headers,
-                    log=update_log,
-                    return_api_exceptions=update_return_codes)
+                    log=update_log)
                 return response
             except NotFoundError:
                 if attempts >= max_attempts:
@@ -1059,7 +1059,7 @@ def __decode_k8s_watch_event(event: dict):
 
 
 async def watch_k8s_resources(
-        resource: Type[ResourceT],
+        resource: Type[ResourceT] | ResourceT,
         name: str | None = None,
         namespace: str | None = None,
         *,
@@ -1093,4 +1093,3 @@ async def watch_k8s_resources(
         if isinstance(e, RESTAPIError):
             raise __decode_k8s_rest_api_response(e)
         raise
-    
