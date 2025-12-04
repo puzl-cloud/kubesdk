@@ -12,7 +12,7 @@ import ssl
 import threading
 import tempfile
 from contextvars import ContextVar
-from typing import Any, Callable, Generic, TypeVar, cast, Awaitable, AsyncIterable, overload, ParamSpec, AsyncIterator
+from typing import Any, Callable, Generic, TypeVar, cast, Awaitable, AsyncIterable
 
 import aiohttp
 
@@ -24,8 +24,9 @@ from ._temp_files import _TempFiles
 
 T = TypeVar("T")
 DEFAULT_VAULT_NAME = "default"
-POOL_SIZE = int(os.getenv("KUBESDK_CLIENT_POOL_SIZE", 4))
-THREADS = int(os.getenv("KUBESDK_CLIENT_THREADS", 1))
+POOL_SIZE = int(os.getenv("KUBESDK_CLIENT_POOL_SIZE", 2))
+THREADS = int(os.getenv("KUBESDK_CLIENT_THREADS", 2))
+MAX_STREAMS_PER_LOOP = int(os.getenv("KUBESDK_MAX_STREAMS_PER_LOOP", 25))
 
 
 class GlobalContextVar(Generic[T]):
@@ -163,7 +164,7 @@ class _Worker:
     """
     A worker owns an asyncio event loop and a list of sessions created on that loop.
     """
-    def __init__(self, worker_index: int, sessions_per_worker: int, session_factory: Callable[[], Any]):
+    def __init__(self, worker_index: int, sessions_per_worker: int, session_factory: Callable):
         self.worker_index = worker_index
         self.sessions_per_worker = max(1, int(sessions_per_worker))
         self._session_factory = session_factory
@@ -230,11 +231,6 @@ class _Worker:
             self._thread.join(timeout=5)
 
 
-_P = ParamSpec("_P")
-_T = TypeVar("_T")
-_ItemT = TypeVar("_ItemT")
-
-
 class APIContext:
     """
     Multi-thread, multi-session context with full TLS/auth header logic.
@@ -252,7 +248,7 @@ class APIContext:
     default_namespace: str | None
 
     def __init__(self, info: ConnectionInfo, pool_size: int = POOL_SIZE, threads: int = THREADS,
-                 session_factory: Callable[[], Any] = None) -> None:
+                 session_factory: Callable = None) -> None:
         self.server = info.server_info.server
         self.default_namespace = info.default_namespace
         self.pool_size = pool_size
@@ -321,18 +317,23 @@ class APIContext:
             # Delay import until runtime for environments without aiohttp
             auth = aiohttp.BasicAuth(username, password)
 
-        def default_factory():
+        def default_factory(stream: bool = False):
             return aiohttp.ClientSession(
-                connector=aiohttp.TCPConnector(limit=0, ssl=ssl_context),
+                connector=aiohttp.TCPConnector(
+                    limit=MAX_STREAMS_PER_LOOP if stream else 100,
+                    ssl=ssl_context,
+                    keepalive_timeout=30
+                ),
                 timeout=aiohttp.ClientTimeout(total=60),
                 read_bufsize=2 ** 21,  # 2 MB (4MB effective limit). Enough for the default k8s object limit of 1MB.
+                max_line_size=2 ** 20,
                 json_serialize=functools.partial(json.dumps, separators=(',', ':')),
                 base_url=self.server,
                 headers=headers,
                 auth=auth
             )
 
-        self._session_factory: Callable[[], Any] = session_factory or default_factory
+        self._session_factory: Callable = session_factory or default_factory
 
         self._sessions_per_worker = max(1, int(pool_size))
         self._num_workers = max(1, int(threads))
@@ -357,6 +358,9 @@ class APIContext:
         # Per-task binding of (worker_idx, session_idx) for .session / .loop / .call
         self._current_addr: ContextVar[tuple[int, int]] = ContextVar(f"api_ctx_addr_{id(self)}")
 
+        # Stream-watch clients, one per event loop
+        self._stream_clients: dict[int, aiohttp.ClientSession] = {}
+
     def _choose_address(self) -> tuple[int, int]:
         with self._rr_lock:
             size = len(self._address_book)
@@ -372,15 +376,24 @@ class APIContext:
     def session(self) -> aiohttp.ClientSession:
         """
         Real aiohttp.ClientSession bound to this context call.
-
-        Must only be used from within a coroutine that is currently executing inside
-        APIContext.call(). Using it outside that will raise RuntimeError.
+        For normal calls: returns worker/session-bound client.
+        For generator calls: returns client created in the caller's loop.
         """
         try:
             worker_idx, session_idx = self._current_addr.get()
         except LookupError:
-            raise RuntimeError("APIContext.session used outside APIContext.call()")
-        # Access the concrete session object on that worker
+            # Generator path: use per-loop client
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                raise RuntimeError("APIContext.session used outside APIContext.call()")
+
+            try:
+                return self._stream_clients[id(loop)]
+            except KeyError:
+                raise RuntimeError("APIContext.session used outside APIContext.call()")
+
+        # Normal worker/session path
         return self._workers[worker_idx]._sessions[session_idx]
 
     @property
@@ -394,15 +407,14 @@ class APIContext:
             raise RuntimeError("APIContext.loop used outside APIContext.call()")
         return self._workers[worker_idx].loop
 
-    @overload
-    async def call(self, fn: Callable[_P, Awaitable[T]], *args: _P.args, **kwargs: _P.kwargs) -> T: ...
-    @overload
-    async def call(self, fn: Callable[_P, AsyncIterator[_ItemT]], *args: _P.args, **kwargs: _P.kwargs) \
-            -> AsyncIterator[_ItemT]: ...
-
     async def call(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Awaitable | AsyncIterable:
         """
-        Run user async function or async generator `fn` on one worker's loop with one specific session bound.
+        Run user async function `fn` on one worker's loop with one specific session bound.
+
+        Inside `fn`, `_context` will be `self`, and `_context.session` / `_context.loop`
+        refer to the chosen worker+session for non-watch queries.
+
+        This is what any consumer (e.g. @authenticated) should use to execute `fn` safely.
         """
         if self.closed:
             raise RuntimeError("APIContext is closed")
@@ -422,74 +434,24 @@ class APIContext:
             fut = asyncio.run_coroutine_threadsafe(_runner(), worker.loop)
             return await asyncio.wrap_future(fut)
 
-        caller_loop = asyncio.get_running_loop()
-        queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
+        # Get the loop where `await call()` is happening
+        loop = asyncio.get_running_loop()
+        loop_id = id(loop)
 
-        async def _create_gen_on_worker():
-            token = self._current_addr.set((worker_idx, session_idx))
-            try:
-                return fn(*args, **kwargs, _context=self)
-            finally:
-                self._current_addr.reset(token)
-
-        # Create async generator on the worker loop
-        agen_fut = asyncio.run_coroutine_threadsafe(_create_gen_on_worker(), worker.loop)
-        agen = await asyncio.wrap_future(agen_fut)
-        tag_item, tag_err, tag_eof = "item", "err", "eof"
-
-        async def driver():
-            """
-            Runs entirely on the worker loop:
-              async for item in agen:
-                  push item into caller's queue
-            """
-            token = self._current_addr.set((worker_idx, session_idx))
-            try:
-                async for item in agen:
-                    # Push into caller-loop queue
-                    caller_loop.call_soon_threadsafe(queue.put_nowait, (tag_item, item))
-
-                # End of stream
-                caller_loop.call_soon_threadsafe(queue.put_nowait, (tag_eof, None))
-
-            except BaseException as e:
-                # Propagate error to caller
-                caller_loop.call_soon_threadsafe(queue.put_nowait, (tag_err, e))
-
-            finally:
-                try:
-                    await agen.aclose()
-                except BaseException:
-                    pass
-                self._current_addr.reset(token)
-
-        # Start the driver once on the worker loop
-        driver_future = asyncio.run_coroutine_threadsafe(driver(), worker.loop)
+        # Create or reuse httpx.AsyncClient bound to this loop
+        if loop_id not in self._stream_clients:
+            self._stream_clients[loop_id] = self._session_factory()
 
         async def _proxy():
             """
-            Async generator that the caller sees, running on the caller loop.
+            Async generator that the caller sees.
 
-            It consumes (tag, payload) from the queue.
-            On cancellation / break, it cancels the driver on the worker loop.
+            Runs on the caller's loop, uses per-loop client via `session` property.
+            No cross-thread communication, no ContextVar juggling.
             """
-            try:
-                while True:
-                    tag, payload = await queue.get()
-                    if tag == tag_item:
-                        yield payload
-                    elif tag == tag_err:
-                        raise payload
-                    elif tag == tag_eof:
-                        break
-            finally:
-                # Consumer stopped early or loop cancelled
-                driver_future.cancel()
-                try:
-                    await asyncio.wrap_future(driver_future)
-                except BaseException:
-                    # We don't care about any driver errors here
-                    pass
+            agen = fn(*args, **kwargs, _context=self)
+            async for item in agen:
+                yield item
 
         return _proxy()
 
