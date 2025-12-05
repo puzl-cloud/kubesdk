@@ -43,6 +43,12 @@ CLI that generates models from a live cluster or OpenAPI spec, including your ow
 | Separated API models package       | ✅           | ✗                 | ✗                            | ✗        | ✅        |
 | Performance on large-scale workloads | ✅ >1000 RPS | ✅ >1000 RPS       | <100 RPS                     | <100 RPS | <100 RPS |
 
+### Benchmark
+
+[Benchmark](https://github.com/puzl-cloud/k8s-clients-bench) results in this repo were collected against kind (Kubernetes in Docker), which provides a fast, consistent local environment for comparing client overhead under the same cluster conditions.
+
+![Benchmark results](https://raw.githubusercontent.com/puzl-cloud/k8s-clients-bench/refs/heads/main/python_kubernetes_clients_benchmark.png)
+
 ## Installation
 
 ```bash
