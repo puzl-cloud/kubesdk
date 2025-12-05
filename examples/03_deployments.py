@@ -6,7 +6,6 @@ Demonstrates Deployment lifecycle operations:
 - Creating Deployments with resource specs
 - Scaling replicas
 - Rolling image updates
-- Monitoring rollout status
 - Cleanup with propagation policy
 
 Prerequisites:
@@ -196,35 +195,6 @@ async def update_container_image(new_image: str) -> Deployment:
     return updated
 
 
-async def wait_for_rollout(timeout: int = 120) -> Deployment:
-    """Poll Deployment status until rollout completes or timeout."""
-    start_time = asyncio.get_event_loop().time()
-
-    while True:
-        deployment = await get_k8s_resource(
-            Deployment,
-            name=DEPLOYMENT_NAME,
-            namespace=NAMESPACE,
-        )
-
-        desired = deployment.spec.replicas
-        updated = deployment.status.updatedReplicas or 0
-        available = deployment.status.availableReplicas or 0
-        ready = deployment.status.readyReplicas or 0
-
-        print(f"  Rollout: {updated}/{desired} updated, {available}/{desired} available")
-
-        if updated == desired and available == desired and ready == desired:
-            print("Rollout completed")
-            return deployment
-
-        elapsed = asyncio.get_event_loop().time() - start_time
-        if elapsed > timeout:
-            raise TimeoutError(f"Rollout did not complete within {timeout}s")
-
-        await asyncio.sleep(2)
-
-
 async def list_deployments_by_label() -> list:
     """List Deployments matching a label selector."""
     params = K8sQueryParams(
@@ -245,38 +215,15 @@ async def list_deployments_by_label() -> list:
 
 
 async def cleanup_deployment():
-    """Delete Deployment with foreground propagation (waits for pods)."""
-    try:
-        delete_options = DeleteOptions(
-            propagationPolicy="Foreground",
-            gracePeriodSeconds=30,
-        )
+    """Delete Deployment. Uses return_api_exceptions to handle already-deleted case."""
+    result = await delete_k8s_resource(
+        Deployment,
+        name=DEPLOYMENT_NAME,
+        namespace=NAMESPACE,
+        return_api_exceptions=[404],
+    )
 
-        await delete_k8s_resource(
-            Deployment,
-            name=DEPLOYMENT_NAME,
-            namespace=NAMESPACE,
-            delete_options=delete_options,
-        )
-        print(f"Deleting: {DEPLOYMENT_NAME}")
-
-        # Wait for actual deletion
-        for _ in range(30):
-            try:
-                await get_k8s_resource(
-                    Deployment,
-                    name=DEPLOYMENT_NAME,
-                    namespace=NAMESPACE,
-                )
-                await asyncio.sleep(2)
-            except NotFoundError:
-                print("Deployment deleted")
-                return
-
-        print("Deletion still in progress")
-
-    except NotFoundError:
-        print("Deployment already deleted")
+    print(f"Deleted: {DEPLOYMENT_NAME}")
 
 
 async def main():
@@ -301,12 +248,8 @@ async def main():
 
         # Rolling update
         await update_container_image("nginx:1.25")
-
-        # Wait for rollout
-        try:
-            await wait_for_rollout(timeout=60)
-        except TimeoutError as e:
-            print(f"Warning: {e}")
+        await asyncio.sleep(5)
+        await get_deployment_status()
 
         # Scale down
         await scale_deployment(replicas=1)
