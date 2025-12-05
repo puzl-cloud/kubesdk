@@ -313,7 +313,7 @@ kubesdk \
 
 ## Near-term roadmap
 
-- [ ] Publish client benchmark suite and results
+- [x] Publish client benchmark suite and results
 - [ ] Add contributor guide and contribution workflow
 - [ ] Ship detailed API and usage documentation
 - [ ] CRD YAML generator from your dataclasses
