@@ -45,7 +45,7 @@ CLI that generates models from a live cluster or OpenAPI spec, including your ow
 
 ### Benchmark
 
-[Benchmark](https://github.com/puzl-cloud/k8s-clients-bench) results were collected against kind (Kubernetes in Docker), which provides a fast, consistent local environment for comparing client overhead under the same cluster conditions.
+[Benchmark](https://github.com/puzl-cloud/k8s-clients-bench) results were collected against **[kind](https://github.com/kubernetes-sigs/kind) (Kubernetes in Docker)**, which provides a fast, consistent local environment for comparing client overhead under the same cluster conditions.
 
 ![Benchmark results](https://raw.githubusercontent.com/puzl-cloud/k8s-clients-bench/refs/heads/main/python_kubernetes_clients_benchmark.png)
 
