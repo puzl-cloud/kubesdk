@@ -108,28 +108,6 @@ async def login_multiple_clusters():
     return clusters
 
 
-async def demonstrate_automatic_reauth():
-    """
-    Demonstrate automatic re-authentication.
-
-    kubesdk automatically handles:
-    - Token expiration and refresh
-    - 401 Unauthorized errors with retry
-    - Credential rotation without interruption
-    """
-    await login()
-
-    # Operations automatically handle auth failures
-    # The @authenticated decorator in kubesdk:
-    # 1. Injects the APIContext with session
-    # 2. On UnauthorizedError, re-fetches credentials from vault
-    # 3. Retries the operation with new credentials
-
-    for _ in range(3):
-        namespaces = await get_k8s_resource(Namespace)
-        await asyncio.sleep(1)
-
-
 async def check_connection_info():
     """
     Check current connection information.
@@ -139,16 +117,12 @@ async def check_connection_info():
 
 
 async def main():
-    """Run all authentication examples."""
-
+    """Run authentication examples."""
     # Basic default login (most common case)
     await default_login()
 
     # Check connection details
     await check_connection_info()
-
-    # Demonstrate automatic re-authentication
-    await demonstrate_automatic_reauth()
 
     # Uncomment to test other patterns:
     # await login_with_specific_context()
