@@ -7,6 +7,7 @@ from collections.abc import MutableMapping
 from .picker import PathKey, PathPicker, _resolve_segment
 
 _ObjectT = TypeVar("_ObjectT")
+_ValueT = TypeVar("_ValueT")
 
 
 def _replace_recursive(
@@ -76,15 +77,15 @@ def _replace_recursive(
     return current
 
 
-def replace_(obj: _ObjectT, picker: PathPicker[Any], new_value: Any) -> _ObjectT:
+def replace_(obj: _ObjectT, path: PathPicker[_ValueT], new_value: _ValueT) -> _ObjectT:
     """
     Deep analogue of dataclasses.replace() using PathPicker.
     Unlike dataclasses.replace(), it always copies values of the mapping fields.
 
     :param obj: Object to make a replacement on.
-    :param picker: Path pointing to the leaf to replace.
+    :param path: Path pointing to the leaf to replace.
     :param new_value: New value to set at the leaf.
-    :returns: New object with the value at ``picker`` replaced.
+    :returns: New object with the value at ``path`` replaced.
     :raises PathResolutionError: If any path segment cannot be resolved.
     """
-    return cast(_ObjectT, _replace_recursive(obj, picker.segments, new_value, picker.segments, 0))
+    return cast(_ObjectT, _replace_recursive(obj, path.segments, new_value, path.segments, 0))

@@ -164,8 +164,7 @@ from dataclasses import replace
 from kube_models.api_v1.io.k8s.api.core.v1 import LimitRange, LimitRangeSpec, LimitRangeItem
 from kube_models.api_v1.io.k8s.apimachinery.pkg.apis.meta.v1 import OwnerReference, ObjectMeta
 
-from kubesdk.client import create_k8s_resource, update_k8s_resource
-from kubesdk.path_picker import from_root_, path_
+from kubesdk import create_k8s_resource, update_k8s_resource, from_root_, path_, replace_
 
 
 async def patch_limit_range() -> None:
@@ -194,28 +193,46 @@ async def patch_limit_range() -> None:
     # The client returns the latest version from the API server.
     latest: LimitRange = await create_k8s_resource(initial_range)
 
-    # Build a new list of limits with updated PVC min storage.
-    updated_limits = [
-        replace(lim, min={"storage": "3Gi"})
-        if lim.type == "PersistentVolumeClaim" else lim
-        for lim in latest.spec.limits
-    ]
-
-    # Append a new OwnerReference.
-    updated_range = replace(
+    #
+    # We want to make a few modifications, will do them one by one. 
+    # First, append a new OwnerReference.
+    #
+    # IDE autocomplete works here
+    owner_ref_path = path_(from_root_(LimitRange).metadata.ownerReferences)
+    updated_range = replace_(
         latest,
-        metadata=replace(
-            latest.metadata,
-            ownerReferences=latest.metadata.ownerReferences + [
-                OwnerReference(
-                    uid="9153e39d-87d1-46b2-b251-5f6636c30610",
-                    apiVersion="v1",
-                    kind="Secret",
-                    name="test-secret-1",
-                ),
-            ],
-        ),
-        spec=replace(latest.spec, limits=updated_limits),
+        
+        # IDE autocomplete works here
+        path=owner_ref_path,
+        
+        # Typecheck works here
+        new_value=latest.metadata.ownerReferences + [
+            OwnerReference(
+                uid="9153e39d-87d1-46b2-b251-5f6636c30610",
+                apiVersion="v1",
+                kind="Secret",
+                name="test-secret-1",
+            ),
+        ]
+    )
+    
+    #
+    # Then, set a new list of limits with updated PVC min storage.
+    #
+    # IDE autocomplete works here
+    limits_path = path_(from_root_(LimitRange).spec.limits)
+    updated_range = replace_(
+        updated_range,
+        
+        # IDE autocomplete works here
+        path=limits_path,
+        
+        # Typecheck works here
+        new_value=[
+            replace(lim, min={"storage": "3Gi"})
+            if lim.type == "PersistentVolumeClaim" else lim
+            for lim in latest.spec.limits
+        ]
     )
 
     update_all_changed_fields = True
@@ -225,15 +242,10 @@ async def patch_limit_range() -> None:
 
     # Or, restrict the patch to specific paths only (optional)
     else:
-        obj = from_root_(LimitRange)
         await update_k8s_resource(
             updated_range,
             built_from_latest=latest,
-            paths=[
-                # IDE autocomplete works here
-                path_(obj.metadata.ownerReferences),
-                path_(obj.spec.limits),
-            ],
+            paths=[owner_ref_path, limits_path],
         )
 ```
 

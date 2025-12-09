@@ -17,11 +17,14 @@ if not logging.getLogger().hasHandlers():
 logger = logging.getLogger(__name__)
 
 
-from .client import create_k8s_resource, get_k8s_resource, update_k8s_resource, delete_k8s_resource, \
-    create_or_update_k8s_resource, APIRequestProcessingConfig, APIRequestLoggingConfig, K8sAPIRequestLoggingConfig
-from .login import login, KubeConfig
-from .errors import *
 from ._path.picker import PathPicker, PathRoot, path_, from_root_
 from ._path.replace_at_path import replace_
 from ._patch.json_patch import guard_lists_from_json_patch_replacement, apply_patch, json_patch_from_diff
 from ._patch.strategic_merge_patch import jsonpatch_to_smp
+
+from .login import login, KubeConfig
+from .credentials import ServerInfo, ClientInfo, ConnectionInfo
+
+from .errors import *
+from .client import create_k8s_resource, get_k8s_resource, update_k8s_resource, delete_k8s_resource, \
+    create_or_update_k8s_resource, APIRequestProcessingConfig, APIRequestLoggingConfig, K8sAPIRequestLoggingConfig
