@@ -38,13 +38,7 @@ from datetime import datetime, timezone
 from collections.abc import AsyncIterable, AsyncIterator, Mapping
 from typing import Callable, NewType, TypeVar, cast
 
-
-class LoginError(Exception):
-    """ Raised when the operator cannot login to the API. """
-
-
-class AccessError(Exception):
-    """ Raised when the operator cannot access the cluster API. """
+from .errors import LoginError
     
 
 @dataclass(frozen=True)

@@ -9,14 +9,19 @@ if not logging.getLogger().hasHandlers():
             extras = [f"{k}={v}" for k, v in record.__dict__.items() if k not in base]
             return s + (" | " + " ".join(extras) if extras else "")
 
-    handler = logging.StreamHandler()
-    handler.setFormatter(_DefaultFormatter("%(name)s [%(levelname)s] %(message)s"))
-    logging.getLogger().addHandler(handler)
+    __handler = logging.StreamHandler()
+    __handler.setFormatter(_DefaultFormatter("%(name)s [%(levelname)s] %(message)s"))
+    logging.getLogger().addHandler(__handler)
     logging.getLogger().setLevel(logging.INFO)
-
 
 logger = logging.getLogger(__name__)
 
+
 from .client import create_k8s_resource, get_k8s_resource, update_k8s_resource, delete_k8s_resource, \
     create_or_update_k8s_resource, APIRequestProcessingConfig, APIRequestLoggingConfig, K8sAPIRequestLoggingConfig
+from .login import login, KubeConfig
 from .errors import *
+from ._path.picker import PathPicker, PathRoot, path_, from_root_
+from ._path.replace_at_path import replace_
+from ._patch.json_patch import guard_lists_from_json_patch_replacement, apply_patch, json_patch_from_diff
+from ._patch.strategic_merge_patch import jsonpatch_to_smp

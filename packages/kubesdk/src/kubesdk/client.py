@@ -30,17 +30,17 @@ from kube_models.const import PatchRequestType, StrEnum
 from kube_models.resource import K8sResource, K8sResourceList
 from kube_models.api_v1.io.k8s.apimachinery.pkg.apis.meta.v1 import DeleteOptions, Status
 
-from .auth import authenticated, APIContext
+from ._auth import authenticated, APIContext
 from .errors import *
 from ._patch.strategic_merge_patch import jsonpatch_to_smp
 from ._patch.json_patch import guard_lists_from_json_patch_replacement, json_patch_from_diff
-from .path_picker import PathPicker
+from ._path.picker import PathPicker
 
 
 _log = logging.getLogger(__name__)
 
 
-@dataclass(kw_only=True, frozen=True)
+@dataclass(kw_only=True)
 class APIRequestProcessingConfig:
     http_timeout: int = field(default=30)
     backoff_limit: int = field(default=3)
@@ -48,7 +48,7 @@ class APIRequestProcessingConfig:
     retry_statuses: Sequence[int | Type[RESTAPIError]] = field(default_factory=list)
 
 
-@dataclass(kw_only=True, frozen=True)
+@dataclass(kw_only=True)
 class APIRequestLoggingConfig:
     api_name: str
     on_success: bool = field(default=False)
@@ -182,15 +182,15 @@ class K8sQueryParams:
         return items
 
 
-@dataclass(kw_only=True, frozen=True)
+@dataclass(kw_only=True)
 class K8sAPIRequestLoggingConfig(APIRequestLoggingConfig):
     api_name: str = field(default="Kubernetes")
     response_body: Callable | bool = field(default=lambda response_json: response_json.get("kind") == "Status")
     errors_as_critical: bool = field(default=False)
 
 
-_DEFAULT_PROCESSING = APIRequestProcessingConfig()
-_DEFAULT_LOGGING = K8sAPIRequestLoggingConfig()
+DEFAULT_PROCESSING = APIRequestProcessingConfig()
+DEFAULT_LOGGING = K8sAPIRequestLoggingConfig()
 
 
 async def _raw_api_request(
@@ -201,8 +201,8 @@ async def _raw_api_request(
         data: dict[str, str | int | bool | list | dict] | list[dict[str, str | int | bool | list | dict]] = None,
         params: list[tuple[str, str]] = None,
         headers: dict[str, str] = None,
-        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
-        log: APIRequestLoggingConfig = _DEFAULT_LOGGING
+        processing: APIRequestProcessingConfig = DEFAULT_PROCESSING,
+        log: APIRequestLoggingConfig = DEFAULT_LOGGING
 ) -> aiohttp.ClientResponse:
     headers = headers or {}
     headers.setdefault("Accept", "application/json")
@@ -280,8 +280,8 @@ async def rest_api_request(
         *,
         params: list[tuple[str, str]] = None,
         headers: dict[str, str] = None,
-        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
-        log: APIRequestLoggingConfig = _DEFAULT_LOGGING,
+        processing: APIRequestProcessingConfig = DEFAULT_PROCESSING,
+        log: APIRequestLoggingConfig = DEFAULT_LOGGING,
         return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None,
         _context: APIContext = None
 ) -> dict | list | RESTAPIError:
@@ -363,8 +363,8 @@ async def stream_api_request(
         *,
         params: list[tuple[str, str]] = None,
         headers: dict[str, str] = None,
-        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
-        log: APIRequestLoggingConfig = _DEFAULT_LOGGING,
+        processing: APIRequestProcessingConfig = DEFAULT_PROCESSING,
+        log: APIRequestLoggingConfig = DEFAULT_LOGGING,
         _context: APIContext = None
 ) -> AsyncIterator[dict[str, Any]]:
     api_name = f"{log.api_name} stream API"
@@ -507,8 +507,8 @@ async def get_k8s_resource(
         server: str = None,
         params: K8sQueryParams = None,
         headers: dict[str, str] = None,
-        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
-        log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
+        processing: APIRequestProcessingConfig = DEFAULT_PROCESSING,
+        log: K8sAPIRequestLoggingConfig = DEFAULT_LOGGING,
         return_api_exceptions: Literal[None] = None
 ) -> ResourceT: ...
 
@@ -521,8 +521,8 @@ async def get_k8s_resource(
         server: str = None,
         params: K8sQueryParams = None,
         headers: dict[str, str] = None,
-        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
-        log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
+        processing: APIRequestProcessingConfig = DEFAULT_PROCESSING,
+        log: K8sAPIRequestLoggingConfig = DEFAULT_LOGGING,
         return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None
 ) -> ResourceT | RESTAPIError[Status]: ...
 
@@ -533,8 +533,8 @@ async def get_k8s_resource(
         server: str = None,
         params: K8sQueryParams = None,
         headers: dict[str, str] = None,
-        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
-        log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
+        processing: APIRequestProcessingConfig = DEFAULT_PROCESSING,
+        log: K8sAPIRequestLoggingConfig = DEFAULT_LOGGING,
         return_api_exceptions: Literal[None] = None
 ) -> ResourceT: ...
 
@@ -545,8 +545,8 @@ async def get_k8s_resource(
         server: str = None,
         params: K8sQueryParams = None,
         headers: dict[str, str] = None,
-        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
-        log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
+        processing: APIRequestProcessingConfig = DEFAULT_PROCESSING,
+        log: K8sAPIRequestLoggingConfig = DEFAULT_LOGGING,
         return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None
 ) -> ResourceT | RESTAPIError[Status]: ...
 
@@ -558,8 +558,8 @@ async def get_k8s_resource(
         server: str = None,
         params: K8sQueryParams = None,
         headers: dict[str, str] = None,
-        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
-        log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING
+        processing: APIRequestProcessingConfig = DEFAULT_PROCESSING,
+        log: K8sAPIRequestLoggingConfig = DEFAULT_LOGGING
 ) -> K8sResourceList[ResourceT]: ...
 
 async def get_k8s_resource(
@@ -570,8 +570,8 @@ async def get_k8s_resource(
         server: str = None,
         params: K8sQueryParams = None,
         headers: dict[str, str] = None,
-        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
-        log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
+        processing: APIRequestProcessingConfig = DEFAULT_PROCESSING,
+        log: K8sAPIRequestLoggingConfig = DEFAULT_LOGGING,
         return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None
 ) -> ResourceT | RESTAPIError[Status]:
     method = HTTPMethod.GET
@@ -605,8 +605,8 @@ async def create_k8s_resource(
         server: str = None,
         params: K8sQueryParams = None,
         headers: dict[str, str] = None,
-        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
-        log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
+        processing: APIRequestProcessingConfig = DEFAULT_PROCESSING,
+        log: K8sAPIRequestLoggingConfig = DEFAULT_LOGGING,
         return_api_exceptions: Literal[None] = None
 ) -> ResourceT | Status: ...
 
@@ -618,8 +618,8 @@ async def create_k8s_resource(
         server: str = None,
         params: K8sQueryParams = None,
         headers: dict[str, str] = None,
-        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
-        log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
+        processing: APIRequestProcessingConfig = DEFAULT_PROCESSING,
+        log: K8sAPIRequestLoggingConfig = DEFAULT_LOGGING,
         return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None
 ) -> ResourceT | Status | RESTAPIError[Status]: ...
 
@@ -630,8 +630,8 @@ async def create_k8s_resource(
         server: str = None,
         params: K8sQueryParams = None,
         headers: dict[str, str] = None,
-        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
-        log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
+        processing: APIRequestProcessingConfig = DEFAULT_PROCESSING,
+        log: K8sAPIRequestLoggingConfig = DEFAULT_LOGGING,
         return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None
 ) -> ResourceT | Status | RESTAPIError[Status]:
     method = HTTPMethod.POST
@@ -766,8 +766,8 @@ async def update_k8s_resource(
         paths: list[PathPicker] = None,
         force: bool = False,
         ignore_list_conflicts: bool = False,
-        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
-        log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
+        processing: APIRequestProcessingConfig = DEFAULT_PROCESSING,
+        log: K8sAPIRequestLoggingConfig = DEFAULT_LOGGING,
         return_api_exceptions: Literal[None] = None
 ) -> ResourceT | Status: ...
 
@@ -784,8 +784,8 @@ async def update_k8s_resource(
         paths: list[PathPicker] = None,
         force: bool = False,
         ignore_list_conflicts: bool = False,
-        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
-        log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
+        processing: APIRequestProcessingConfig = DEFAULT_PROCESSING,
+        log: K8sAPIRequestLoggingConfig = DEFAULT_LOGGING,
         return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None
 ) -> ResourceT | Status | RESTAPIError[Status]: ...
 
@@ -801,8 +801,8 @@ async def update_k8s_resource(
         paths: list[PathPicker] = None,
         force: bool = False,
         ignore_list_conflicts: bool = False,
-        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
-        log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
+        processing: APIRequestProcessingConfig = DEFAULT_PROCESSING,
+        log: K8sAPIRequestLoggingConfig = DEFAULT_LOGGING,
         return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None
 ) -> ResourceT | Status | RESTAPIError[Status]:
 
@@ -903,8 +903,8 @@ async def delete_k8s_resource(
         params: K8sQueryParams = None,
         headers: dict[str, str] = None,
         delete_options: DeleteOptions = None,
-        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
-        log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
+        processing: APIRequestProcessingConfig = DEFAULT_PROCESSING,
+        log: K8sAPIRequestLoggingConfig = DEFAULT_LOGGING,
         return_api_exceptions: Literal[None] = None
 ) -> ResourceT | Status: ...
 
@@ -917,8 +917,8 @@ async def delete_k8s_resource(
         server: str,
         headers: dict[str, str] = None,
         delete_options: DeleteOptions = None,
-        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
-        log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
+        processing: APIRequestProcessingConfig = DEFAULT_PROCESSING,
+        log: K8sAPIRequestLoggingConfig = DEFAULT_LOGGING,
         return_api_exceptions: Literal[None] = None
 ) -> ResourceT | Status: ...
 
@@ -932,8 +932,8 @@ async def delete_k8s_resource(
         params: K8sQueryParams = None,
         headers: dict[str, str] = None,
         delete_options: DeleteOptions = None,
-        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
-        log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
+        processing: APIRequestProcessingConfig = DEFAULT_PROCESSING,
+        log: K8sAPIRequestLoggingConfig = DEFAULT_LOGGING,
         return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None
 ) -> ResourceT | Status | RESTAPIError[Status]: ...
 
@@ -947,8 +947,8 @@ async def delete_k8s_resource(
         params: K8sQueryParams = None,
         headers: dict[str, str] = None,
         delete_options: DeleteOptions = None,
-        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
-        log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
+        processing: APIRequestProcessingConfig = DEFAULT_PROCESSING,
+        log: K8sAPIRequestLoggingConfig = DEFAULT_LOGGING,
         return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None
 ) -> ResourceT | Status | RESTAPIError[Status]: ...
 
@@ -961,8 +961,8 @@ async def delete_k8s_resource(
         params: K8sQueryParams = None,
         headers: dict[str, str] = None,
         delete_options: DeleteOptions = None,
-        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
-        log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
+        processing: APIRequestProcessingConfig = DEFAULT_PROCESSING,
+        log: K8sAPIRequestLoggingConfig = DEFAULT_LOGGING,
         return_api_exceptions: Sequence[int | Type[RESTAPIError]] = None
 ) -> ResourceT | Status | RESTAPIError[Status]:
     method = HTTPMethod.DELETE
@@ -997,7 +997,7 @@ async def create_or_update_k8s_resource(
         paths: list[PathPicker] = None,
         force: bool = False,
         ignore_list_conflicts: bool = False,
-        log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING
+        log: K8sAPIRequestLoggingConfig = DEFAULT_LOGGING
 ) -> ResourceT | Status:
 
     # We catch 403 here too, because if there's ResourceQuota set, and it's drained,
@@ -1066,8 +1066,8 @@ async def watch_k8s_resources(
         server: str | None = None,
         params: K8sQueryParams | None = None,
         headers: dict[str, str] | None = None,
-        processing: APIRequestProcessingConfig = _DEFAULT_PROCESSING,
-        log: K8sAPIRequestLoggingConfig = _DEFAULT_LOGGING,
+        processing: APIRequestProcessingConfig = DEFAULT_PROCESSING,
+        log: K8sAPIRequestLoggingConfig = DEFAULT_LOGGING,
 ) -> AsyncIterator[K8sResourceEvent[ResourceT]]:
     """
     Example:

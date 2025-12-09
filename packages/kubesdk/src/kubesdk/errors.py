@@ -1,18 +1,18 @@
 from typing import Generic, TypeVar
 
-ErrorExtraT = TypeVar('ErrorExtraT')
+_ErrorExtraT = TypeVar('_ErrorExtraT')
 
 
-class RESTAPIError(Exception, Generic[ErrorExtraT]):
+class RESTAPIError(Exception, Generic[_ErrorExtraT]):
     """General exception for REST API errors."""
     api_name: str
     status: int
     _message: str
     response: dict | str
-    extra: ErrorExtraT | None
+    extra: _ErrorExtraT | None
 
     def __init__(self, status: int = None, message: str = None, response: dict | str = None,
-                 api_name: str = "Kubernetes", extra: ErrorExtraT = None):
+                 api_name: str = "Kubernetes", extra: _ErrorExtraT = None):
         super().__init__(message)
         self.status = status
         self._message = message
