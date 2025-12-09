@@ -74,8 +74,7 @@ from kube_models.api_v1.io.k8s.api.core.v1 import (
 )
 from kube_models.api_v1.io.k8s.apimachinery.pkg.apis.meta.v1 import ObjectMeta
 
-from kubesdk.login import login
-from kubesdk.client import create_k8s_resource, get_k8s_resource
+from kubesdk import login, create_k8s_resource, get_k8s_resource
 
 
 async def main() -> None:
@@ -121,8 +120,7 @@ if __name__ == "__main__":
 import asyncio
 
 from kube_models.apis_apps_v1.io.k8s.api.apps.v1 import Deployment
-from kubesdk.login import login
-from kubesdk.client import watch_k8s_resources
+from kubesdk import login, watch_k8s_resources
 
 
 async def main() -> None:
@@ -143,8 +141,7 @@ if __name__ == "__main__":
 import asyncio
 
 from kube_models.apis_apps_v1.io.k8s.api.apps.v1 import Deployment
-from kubesdk.login import login
-from kubesdk.client import delete_k8s_resource
+from kubesdk import login, delete_k8s_resource
 
 
 async def main() -> None:
@@ -255,8 +252,8 @@ async def patch_limit_range() -> None:
 import asyncio
 from dataclasses import replace
 
-from kubesdk.login import login, KubeConfig, ServerInfo
-from kubesdk.client import watch_k8s_resources, create_or_update_k8s_resource, delete_k8s_resource, WatchEventType
+from kubesdk import login, KubeConfig, ServerInfo, watch_k8s_resources, create_or_update_k8s_resource, \
+    delete_k8s_resource, WatchEventType
 from kube_models.api_v1.io.k8s.api.core.v1 import Secret
 
 
