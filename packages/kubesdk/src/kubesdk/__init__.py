@@ -26,4 +26,7 @@ from .login import login, KubeConfig
 from .credentials import ServerInfo, ClientInfo, ConnectionInfo
 
 from .errors import *
-from .client import *
+from .client import APIRequestProcessingConfig, APIRequestLoggingConfig, DryRun, PropagationPolicy, LabelSelectorOp, \
+    QueryLabelSelectorRequirement, QueryLabelSelector, FieldSelectorOp, FieldSelectorRequirement, FieldSelector, \
+    K8sQueryParams, K8sAPIRequestLoggingConfig, get_k8s_resource, create_k8s_resource, update_k8s_resource, \
+    delete_k8s_resource, create_or_update_k8s_resource, WatchEventType, K8sResourceEvent, watch_k8s_resources
