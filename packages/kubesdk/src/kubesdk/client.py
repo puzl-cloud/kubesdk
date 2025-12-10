@@ -44,7 +44,7 @@ _log = logging.getLogger(__name__)
 class APIRequestProcessingConfig:
     http_timeout: int = field(default=30)
     backoff_limit: int = field(default=3)
-    backoff_interval: int | Callable = field(default=5)
+    backoff_interval: int | Callable[[int], int] = field(default=5)
     retry_statuses: Sequence[int | Type[RESTAPIError]] = field(default_factory=list)
 
 
@@ -245,7 +245,11 @@ async def _raw_api_request(
                     await response.read()
                 finally:
                     response.release()
-                await asyncio.sleep(processing.backoff_interval)
+                if callable(processing.backoff_interval):
+                    backoff = processing.backoff_interval(attempt)
+                else:
+                    backoff = processing.backoff_interval
+                await asyncio.sleep(backoff)
                 continue
 
             # We never parse response here because we don't know if it was stream or REST
