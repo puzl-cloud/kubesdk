@@ -20,12 +20,10 @@ import asyncio
 import os
 
 from kubesdk.login import login, KubeConfig
-from kubesdk import get_k8s_resource
-
-from kube_models.api_v1.io.k8s.api.core.v1 import Namespace
+from kubesdk.credentials import ServerInfo
 
 
-async def default_login():
+async def default_login() -> ServerInfo:
     """
     Default login - automatically detects credentials.
 
@@ -35,14 +33,10 @@ async def default_login():
     3. kubeconfig from ~/.kube/config
     """
     server_info = await login()
-
-    # Verify connection by listing namespaces (inspect namespaces.items as needed)
-    namespaces = await get_k8s_resource(Namespace)
-
     return server_info
 
 
-async def login_with_specific_context():
+async def login_with_specific_context() -> ServerInfo | None:
     """
     Login using a specific context from kubeconfig.
 
@@ -59,7 +53,7 @@ async def login_with_specific_context():
         return None
 
 
-async def login_with_custom_kubeconfig_path():
+async def login_with_custom_kubeconfig_path() -> ServerInfo:
     """
     Login using a kubeconfig file from a custom location.
 
@@ -78,7 +72,7 @@ async def login_with_custom_kubeconfig_path():
     return server_info
 
 
-async def login_multiple_clusters():
+async def login_multiple_clusters() -> dict[str, ServerInfo]:
     """
     Connect to multiple Kubernetes clusters simultaneously.
 
@@ -108,12 +102,13 @@ async def login_multiple_clusters():
     return clusters
 
 
-async def check_connection_info():
+async def check_connection_info() -> ServerInfo:
     """
     Check current connection information.
     """
     server_info = await login()
     # Inspect server_info.* for cluster URL, CA path, and TLS verification flags
+    return server_info
 
 
 async def main():

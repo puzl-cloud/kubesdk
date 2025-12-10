@@ -24,7 +24,7 @@ from kube_models.api_v1.io.k8s.apimachinery.pkg.apis.meta.v1 import ObjectMeta
 NAMESPACE = "default"
 
 
-async def watch_configmaps(max_events: int = 5):
+async def watch_configmaps(max_events: int = 5) -> None:
     """
     Watch ConfigMaps and print events.
 
@@ -45,7 +45,7 @@ async def watch_configmaps(max_events: int = 5):
             break
 
 
-async def watch_with_filter(label: str, value: str, max_events: int = 3):
+async def watch_with_filter(label: str, value: str, max_events: int = 3) -> None:
     """Watch only ConfigMaps matching a label selector (server-side filtering)."""
     print(f"Watching ConfigMaps with label '{label}={value}'...")
 
@@ -65,7 +65,7 @@ async def watch_with_filter(label: str, value: str, max_events: int = 3):
             break
 
 
-async def watch_for_prefix(prefix: str, max_events: int = 6):
+async def watch_for_prefix(prefix: str, max_events: int = 6) -> None:
     """Watch for ConfigMaps with names starting with prefix."""
     count = 0
     async for event in watch_k8s_resources(ConfigMap, namespace=NAMESPACE):
@@ -80,7 +80,7 @@ async def watch_for_prefix(prefix: str, max_events: int = 6):
                 break
 
 
-async def create_and_delete_configmaps(prefix: str, count: int = 3):
+async def create_and_delete_configmaps(prefix: str, count: int = 3) -> None:
     """Create and delete ConfigMaps to generate watch events."""
     for i in range(count):
         cm = ConfigMap(

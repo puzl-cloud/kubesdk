@@ -22,7 +22,6 @@ from kubesdk import (
     get_k8s_resource,
     update_k8s_resource,
     delete_k8s_resource,
-    NotFoundError,
 )
 from kubesdk.client import K8sQueryParams, QueryLabelSelector
 from kubesdk.path_picker import from_root_, path_
@@ -38,7 +37,6 @@ from kube_models.api_v1.io.k8s.api.core.v1 import (
 from kube_models.api_v1.io.k8s.apimachinery.pkg.apis.meta.v1 import (
     ObjectMeta,
     LabelSelector,
-    DeleteOptions,
 )
 from kube_models.apis_apps_v1.io.k8s.api.apps.v1 import (
     Deployment,
@@ -195,7 +193,7 @@ async def update_container_image(new_image: str) -> Deployment:
     return updated
 
 
-async def list_deployments_by_label() -> list:
+async def list_deployments_by_label() -> list[Deployment]:
     """List Deployments matching a label selector."""
     params = K8sQueryParams(
         labelSelector=QueryLabelSelector(matchLabels={"app": APP_LABEL})
@@ -214,7 +212,7 @@ async def list_deployments_by_label() -> list:
     return deployment_list.items
 
 
-async def cleanup_deployment():
+async def cleanup_deployment() -> None:
     """Delete Deployment. Uses return_api_exceptions to handle already-deleted case."""
     result = await delete_k8s_resource(
         Deployment,
