@@ -53,14 +53,15 @@ class APIRequestLoggingConfig:
     api_name: str
     on_success: bool = field(default=False)
     request_body: bool = field(default=False)
-    response_body: Callable | bool = field(default=False)
+    response_body: Callable[[Any], bool] | bool = field(default=False)
     not_error_statuses: Sequence[int | Type[RESTAPIError]] = field(default_factory=list)
 
     def should_log_response(self, response: Any) -> bool:
         if callable(self.response_body):
-            if type(response) in [dict, list]:
+            try:
                 return self.response_body(response)
-            return False
+            except Exception:
+                return False
         return self.response_body
 
 
@@ -185,7 +186,8 @@ class K8sQueryParams:
 @dataclass(kw_only=True)
 class K8sAPIRequestLoggingConfig(APIRequestLoggingConfig):
     api_name: str = field(default="Kubernetes")
-    response_body: Callable | bool = field(default=lambda response_json: response_json.get("kind") == "Status")
+    response_body: Callable[[Any], bool] | bool = \
+        field(default=lambda response_json: response_json.get("kind") == "Status")
     errors_as_critical: bool = field(default=False)
 
 
