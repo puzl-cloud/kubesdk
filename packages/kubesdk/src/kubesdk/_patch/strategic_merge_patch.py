@@ -2,7 +2,7 @@ from dataclasses import is_dataclass, fields
 from typing import Any, Optional
 import copy
 
-from kube_models.const import *
+from kube_models.const import PatchRequestType, FieldPatchStrategy, PATCH_STRATEGY, PATCH_MERGE_KEY
 from kube_models.resource import K8sResource
 
 from .json_patch import apply_patch

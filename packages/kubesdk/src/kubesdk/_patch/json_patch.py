@@ -83,9 +83,6 @@ def _join_path(base_path: str, token: str) -> str:
         return "/" + escape_json_path_pointer_token(token)
     return base_path + "/" + escape_json_path_pointer_token(token)
 
-def _is_scalar(value: Any) -> bool:
-    return isinstance(value, (str, int, float, type(None), bool))
-
 def _diff_dict(old_map: dict[str, Any], new_map: dict[str, Any], json_pointer: str, patch_ops: list[Op]) -> None:
     old_keys = set(old_map.keys())
     new_keys = set(new_map.keys())
