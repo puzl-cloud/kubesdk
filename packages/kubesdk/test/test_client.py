@@ -1,6 +1,9 @@
 import unittest
+from enum import Enum
 
-from kubesdk.client import *
+# Use package-level import to not miss anything in __init__
+from kubesdk import QueryLabelSelector, QueryLabelSelectorRequirement, LabelSelectorOp, \
+    FieldSelectorRequirement, FieldSelectorOp, FieldSelector, K8sQueryParams, DryRun, PropagationPolicy
 
 
 class TestQueryLabelSelector(unittest.TestCase):

@@ -2,7 +2,7 @@ import asyncio
 import unittest
 from typing import AsyncIterator, Any
 
-from kubesdk.auth import APIContext
+from kubesdk._auth import APIContext
 from kubesdk.credentials import ConnectionInfo, ServerInfo, ClientInfo
 
 

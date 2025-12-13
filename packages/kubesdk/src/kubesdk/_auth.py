@@ -10,7 +10,6 @@ import functools
 import os
 import ssl
 import threading
-import tempfile
 from contextvars import ContextVar
 from typing import Any, Callable, Generic, TypeVar, cast, Awaitable, AsyncIterable
 
@@ -459,7 +458,7 @@ class APIContext:
     def closed(self) -> bool:
         return self._closed.is_set()
 
-    async def close(self) -> None:
+    def close(self) -> None:
         if self.closed:
             return
         self._closed.set()

@@ -1,8 +1,9 @@
 import unittest
-from kubesdk.common import host_from_url
+
+from kubesdk.common import *
 
 
-class TestHostFromUrl100(unittest.TestCase):
+class TestHostFromUrl(unittest.TestCase):
     # ---- early returns / input sanitation ----
     def test_none_and_empty(self):
         self.assertIsNone(host_from_url(None))
@@ -57,3 +58,56 @@ class TestHostFromUrl100(unittest.TestCase):
     def test_whitespace_trim(self):
         self.assertEqual(host_from_url("  https://example.com  "), "example.com")
         self.assertEqual(host_from_url("  example.com:4444  "), "example.com:4444")
+
+
+class TestJoinHostPort(unittest.TestCase):
+    def test_join_host_port_brackets_and_plain(self):
+        self.assertEqual(join_host_port("example.com", 80), "example.com:80")
+        self.assertEqual(join_host_port("2001:db8::1", "443"), "[2001:db8::1]:443")
+        self.assertEqual(join_host_port("fe80::1%eth0", 8080), "[fe80::1%eth0]:8080")
+
+
+class TestNormalizeDictKeys(unittest.TestCase):
+    def test_normalize_dict_keys_recursive_structures(self):
+        original = {
+            "simple-key": 1,
+            "nested-list": [
+                {"inner-key": 2},
+                ("tuple-key", {"another-key": 3}),
+            ],
+            "mixed": {
+                42: "answer",
+                "already_ok": "value",
+            },
+        }
+
+        normalized = normalize_dict_keys(original)
+
+        # top-level keys with '-' converted
+        self.assertIn("simple_key", normalized)
+        self.assertIn("nested_list", normalized)
+        self.assertIn("mixed", normalized)
+        self.assertNotIn("simple-key", normalized)
+        self.assertNotIn("nested-list", normalized)
+
+        # dict branch + base case
+        self.assertEqual(normalized["simple_key"], 1)
+
+        # list branch + nested dict branch
+        self.assertIsInstance(normalized["nested_list"], list)
+        self.assertEqual(normalized["nested_list"][0], {"inner_key": 2})
+
+        # tuple branch + nested dict inside tuple
+        tup = normalized["nested_list"][1]
+        self.assertIsInstance(tup, tuple)
+        self.assertEqual(tup[0], "tuple-key")
+        self.assertEqual(tup[1], {"another_key": 3})
+
+        # non-string dict key preserved
+        self.assertIn(42, normalized["mixed"])
+        self.assertEqual(normalized["mixed"][42], "answer")
+        self.assertIn("already_ok", normalized["mixed"])
+
+        # original object not modified (no in-place changes)
+        self.assertIn("simple-key", original)
+        self.assertIn("nested-list", original)

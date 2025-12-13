@@ -43,6 +43,12 @@ CLI that generates models from a live cluster or OpenAPI spec, including your ow
 | Separated API models package       | ✅           | ✗                 | ✗                            | ✗        | ✅        |
 | Performance on large-scale workloads | ✅ >1000 RPS | ✅ >1000 RPS       | <100 RPS                     | <100 RPS | <100 RPS |
 
+### Benchmark
+
+[Benchmark](https://github.com/puzl-cloud/k8s-clients-bench) results were collected against **[kind](https://github.com/kubernetes-sigs/kind) (Kubernetes in Docker)**, which provides a fast, consistent local environment for comparing client overhead under the same cluster conditions.
+
+![Benchmark results](https://raw.githubusercontent.com/puzl-cloud/k8s-clients-bench/refs/heads/main/python_kubernetes_clients_benchmark.png)
+
 ## Installation
 
 ```bash
@@ -68,8 +74,7 @@ from kube_models.api_v1.io.k8s.api.core.v1 import (
 )
 from kube_models.api_v1.io.k8s.apimachinery.pkg.apis.meta.v1 import ObjectMeta
 
-from kubesdk.login import login
-from kubesdk.client import create_k8s_resource, get_k8s_resource
+from kubesdk import login, create_k8s_resource, get_k8s_resource
 
 
 async def main() -> None:
@@ -115,8 +120,7 @@ if __name__ == "__main__":
 import asyncio
 
 from kube_models.apis_apps_v1.io.k8s.api.apps.v1 import Deployment
-from kubesdk.login import login
-from kubesdk.client import watch_k8s_resources
+from kubesdk import login, watch_k8s_resources
 
 
 async def main() -> None:
@@ -137,8 +141,7 @@ if __name__ == "__main__":
 import asyncio
 
 from kube_models.apis_apps_v1.io.k8s.api.apps.v1 import Deployment
-from kubesdk.login import login
-from kubesdk.client import delete_k8s_resource
+from kubesdk import login, delete_k8s_resource
 
 
 async def main() -> None:
@@ -158,8 +161,7 @@ from dataclasses import replace
 from kube_models.api_v1.io.k8s.api.core.v1 import LimitRange, LimitRangeSpec, LimitRangeItem
 from kube_models.api_v1.io.k8s.apimachinery.pkg.apis.meta.v1 import OwnerReference, ObjectMeta
 
-from kubesdk.client import create_k8s_resource, update_k8s_resource
-from kubesdk.path_picker import from_root_, path_
+from kubesdk import create_k8s_resource, update_k8s_resource, from_root_, path_, replace_
 
 
 async def patch_limit_range() -> None:
@@ -188,28 +190,46 @@ async def patch_limit_range() -> None:
     # The client returns the latest version from the API server.
     latest: LimitRange = await create_k8s_resource(initial_range)
 
-    # Build a new list of limits with updated PVC min storage.
-    updated_limits = [
-        replace(lim, min={"storage": "3Gi"})
-        if lim.type == "PersistentVolumeClaim" else lim
-        for lim in latest.spec.limits
-    ]
-
-    # Append a new OwnerReference.
-    updated_range = replace(
+    #
+    # We want to make a few modifications, will do them one by one. 
+    # First, append a new OwnerReference.
+    #
+    # IDE autocomplete works here
+    owner_ref_path = path_(from_root_(LimitRange).metadata.ownerReferences)
+    updated_range = replace_(
         latest,
-        metadata=replace(
-            latest.metadata,
-            ownerReferences=latest.metadata.ownerReferences + [
-                OwnerReference(
-                    uid="9153e39d-87d1-46b2-b251-5f6636c30610",
-                    apiVersion="v1",
-                    kind="Secret",
-                    name="test-secret-1",
-                ),
-            ],
-        ),
-        spec=replace(latest.spec, limits=updated_limits),
+        
+        # IDE autocomplete works here
+        path=owner_ref_path,
+        
+        # Typecheck works here
+        new_value=latest.metadata.ownerReferences + [
+            OwnerReference(
+                uid="9153e39d-87d1-46b2-b251-5f6636c30610",
+                apiVersion="v1",
+                kind="Secret",
+                name="test-secret-1",
+            ),
+        ]
+    )
+    
+    #
+    # Then, set a new list of limits with updated PVC min storage.
+    #
+    # IDE autocomplete works here
+    limits_path = path_(from_root_(LimitRange).spec.limits)
+    updated_range = replace_(
+        updated_range,
+        
+        # IDE autocomplete works here
+        path=limits_path,
+        
+        # Typecheck works here
+        new_value=[
+            replace(lim, min={"storage": "3Gi"})
+            if lim.type == "PersistentVolumeClaim" else lim
+            for lim in latest.spec.limits
+        ]
     )
 
     update_all_changed_fields = True
@@ -219,15 +239,10 @@ async def patch_limit_range() -> None:
 
     # Or, restrict the patch to specific paths only (optional)
     else:
-        obj = from_root_(LimitRange)
         await update_k8s_resource(
             updated_range,
             built_from_latest=latest,
-            paths=[
-                # IDE autocomplete works here
-                path_(obj.metadata.ownerReferences),
-                path_(obj.spec.limits),
-            ],
+            paths=[owner_ref_path, limits_path],
         )
 ```
 
@@ -237,8 +252,8 @@ async def patch_limit_range() -> None:
 import asyncio
 from dataclasses import replace
 
-from kubesdk.login import login, KubeConfig, ServerInfo
-from kubesdk.client import watch_k8s_resources, create_or_update_k8s_resource, delete_k8s_resource, WatchEventType
+from kubesdk import login, KubeConfig, ServerInfo, watch_k8s_resources, create_or_update_k8s_resource, \
+    delete_k8s_resource, WatchEventType
 from kube_models.api_v1.io.k8s.api.core.v1 import Secret
 
 
@@ -307,7 +322,7 @@ kubesdk \
 
 ## Near-term roadmap
 
-- [ ] Publish client benchmark suite and results
+- [x] Publish client benchmark suite and results
 - [ ] Add contributor guide and contribution workflow
 - [ ] Ship detailed API and usage documentation
 - [ ] CRD YAML generator from your dataclasses
