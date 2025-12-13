@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kube-models"
-version = "0.0.4"
+version = "0.1.0"
 requires-python = ">=3.10"
 description = "Python dataclasses for all Kubernetes built-in resources (v1.23+)"
 readme = "README.md"

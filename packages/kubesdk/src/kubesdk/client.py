@@ -440,10 +440,6 @@ async def stream_api_request(
                 raise ValueError(f"Unable to decode k8s watch event JSON line: {e}. Offending line: {line!r}") from e
 
 
-def __resource_is_namespaced(resource: Type[K8sResource] | K8sResource) -> bool:
-    return "/namespaces/{namespace}/" in resource.api_path_
-
-
 def __build_request_url(resource: Type[K8sResource] | K8sResource, name: str = None, namespace: str = None,
                         trim_name: bool = False) -> str:
     """
@@ -456,15 +452,15 @@ def __build_request_url(resource: Type[K8sResource] | K8sResource, name: str = N
         ns = namespace or resource.metadata.namespace
         name = name or resource.metadata.name
 
-    if __resource_is_namespaced(resource):
+    if resource.is_namespaced_:
         if not ns:
             raise ValueError(f"Resource {resource.apiVersion} is namespaced, but no namespace specified in the metadata")
-        url = resource.api_path_.format(namespace=ns)
+        url = resource.api_path().format(namespace=ns)
     else:
         if ns:
             raise ValueError(f"Resource {resource.apiVersion} is cluster scoped, "
                              f"but namespace {ns} was specified in the metadata")
-        url = resource.api_path_
+        url = resource.api_path()
     return f"{url.strip('/')}/{name}" if name and not trim_name else url
 
 

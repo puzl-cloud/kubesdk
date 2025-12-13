@@ -564,9 +564,8 @@ class OpenAPIK8sParser(OpenAPIParser):
 
                     # Add a few useful ClassVars
                     fields_to_add |= {
-                        "api_path_": meta.path,
                         "plural_": meta.path.split('/')[-1],
-                        "is_namespaced_": "api/v1/namespaces/{namespace}" in meta.path
+                        "is_namespaced_": "namespaces/{namespace}/" in meta.path
                     }
                     for f in model.fields:
                         if f.name == "apiVersion":
