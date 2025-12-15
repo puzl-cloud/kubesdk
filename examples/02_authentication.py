@@ -101,22 +101,10 @@ async def login_multiple_clusters() -> dict[str, ServerInfo]:
     return clusters
 
 
-async def check_connection_info() -> ServerInfo:
-    """
-    Check current connection information.
-    """
-    server_info = await login()
-    # Inspect server_info.* for cluster URL, CA path, and TLS verification flags
-    return server_info
-
-
 async def main():
     """Run authentication examples."""
     # Basic default login (most common case)
     await default_login()
-
-    # Check connection details
-    await check_connection_info()
 
     # Uncomment to test other patterns:
     # await login_with_specific_context()
