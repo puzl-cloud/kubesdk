@@ -103,13 +103,10 @@ async def login_multiple_clusters() -> dict[str, ServerInfo]:
 
 async def main():
     """Run authentication examples."""
-    # Basic default login (most common case)
     await default_login()
-
-    # Uncomment to test other patterns:
-    # await login_with_specific_context()
-    # await login_with_custom_kubeconfig_path()
-    # await login_multiple_clusters()
+    await login_with_specific_context()
+    await login_with_custom_kubeconfig_path()
+    await login_multiple_clusters()
 
 
 if __name__ == "__main__":
