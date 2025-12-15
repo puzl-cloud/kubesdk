@@ -10,7 +10,6 @@ import functools
 import os
 import ssl
 import threading
-import tempfile
 from contextvars import ContextVar
 from typing import Any, Callable, Generic, TypeVar, cast, Awaitable, AsyncIterable
 

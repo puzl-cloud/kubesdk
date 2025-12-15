@@ -4,17 +4,29 @@ import copy
 
 from kube_models import get_k8s_resource_model
 from kube_models.api_v1.io.k8s.apimachinery.pkg.apis.meta.v1 import ObjectMeta
-from kube_models.api_v1.io.k8s.api.core.v1 import Secret
+from kube_models.api_v1.io.k8s.api.core.v1 import Secret, Namespace
+from kube_models.apis_apps_v1.io.k8s.api.apps.v1 import Deployment
 
 
 class UtilsTest(TestCase):
-    def test_model_by_kind(self):
+    def test_model_by_kind_core(self):
         secret = cast(Type[Secret], get_k8s_resource_model('v1', 'Secret'))
         self.assertEqual("v1", secret.apiVersion)
         self.assertEqual("Secret", secret.kind)
         self.assertIsNone(None, secret.group_)
-        self.assertEqual("api/v1/namespaces/{namespace}/secrets", secret.api_path_)
+        self.assertEqual("api/v1/namespaces/{namespace}/secrets", secret.api_path())
         self.assertEqual("secrets", secret.plural_)
+        self.assertEqual(True, Secret.is_namespaced_)
+        self.assertEqual(False, Namespace.is_namespaced_)
+
+    def test_model_by_kind_apis_group(self):
+        deployment = cast(Type[Deployment], get_k8s_resource_model("apps/v1", "Deployment"))
+        self.assertEqual("apps/v1", deployment.apiVersion)
+        self.assertEqual("Deployment", deployment.kind)
+        self.assertEqual("apps", deployment.group_)
+        self.assertEqual("apis/apps/v1/namespaces/{namespace}/deployments", deployment.api_path())
+        self.assertEqual("deployments", deployment.plural_)
+        self.assertEqual(True, Deployment.is_namespaced_)
 
     def test_loading(self):
         secret_instance = Secret(

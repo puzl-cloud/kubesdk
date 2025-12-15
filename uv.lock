@@ -692,7 +692,7 @@ wheels = [
 
 [[package]]
 name = "kube-models"
-version = "0.0.16"
+version = "0.1.0"
 source = { editable = "packages/kube_models" }
 
 [package.dev-dependencies]
@@ -707,7 +707,7 @@ test = [{ name = "coverage" }]
 
 [[package]]
 name = "kubesdk"
-version = "0.0.21"
+version = "0.1.0"
 source = { editable = "packages/kubesdk" }
 dependencies = [
     { name = "aiohttp" },
@@ -743,7 +743,7 @@ test = [
 
 [[package]]
 name = "kubesdk-cli"
-version = "0.0.16"
+version = "0.1.0"
 source = { editable = "packages/kubesdk_cli" }
 dependencies = [
     { name = "datamodel-code-generator", extra = ["http"] },

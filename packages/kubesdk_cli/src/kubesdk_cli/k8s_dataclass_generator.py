@@ -203,8 +203,7 @@ class K8sResource(LazyLoadModel):
     kind: ClassVar[str]
     metadata: ObjectMeta
 
-    # Useful fields which are not a part of the resource model
-    api_path_: ClassVar[str]
+    # OpenAPI fields which are not a part of the resource model
     plural_: ClassVar[str]
     group_: ClassVar[str]
     patch_strategies_: ClassVar[Set[PatchRequestType]]
@@ -216,6 +215,17 @@ class K8sResource(LazyLoadModel):
             if var in src:
                 del src[var]
         return cls(**src | {_LOAD_LAZY_FIELD: lazy, _LOAD_TYPES_ON_INIT: True})
+        
+    @classmethod
+    def api_path(cls) -> str: 
+        try:
+            return cls.__api_path
+        except AttributeError:
+            version = cls.apiVersion.split("/", 1)[-1]
+            base = f"apis/{cls.group_}/{version}" if cls.group_ else f"api/{version}"
+            namespaced_path = "/namespaces/{namespace}" if cls.is_namespaced_ else ""
+            cls.__api_path = f"{base}{namespaced_path}/{cls.plural_}"
+            return cls.__api_path
 
     def to_dict(self) -> Dict[str, Any]:
         res = super(K8sResource, self).to_dict()

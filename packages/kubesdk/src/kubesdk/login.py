@@ -8,7 +8,7 @@ import yaml
 from .common import normalize_dict_keys
 from .errors import *
 from .credentials import ConnectionInfo, ServerInfo, ClientInfo, Vault
-from .auth import _auth_vault_var, DEFAULT_VAULT_NAME
+from ._auth import _auth_vault_var, DEFAULT_VAULT_NAME
 from .common import host_from_url, join_host_port
 
 
@@ -184,9 +184,13 @@ async def _sync_credentials(result: dict[str, ServerInfo], kubeconfig: KubeConfi
             result["info"] = connection_info.server_info
             _log.info(f"kubesdk client for `{cluster_host}` is running under `{account}` account")
         except Exception as e:
-            _log.error(
-                f"Syncing `{kubeconfig.context_name if kubeconfig else KUBECONFIG_DEFAULT_CONTEXT}` Kubernetes credential "
-                f"context failed and will be retried in {backoff_timeout} seconds. Unexpected error: {e}")
+            if kubeconfig:
+                log_context = kubeconfig.context_name or 'current'
+                log_context = f"`{log_context}` credential context at kubeconfig {kubeconfig.path}"
+            else:
+                log_context = "ServiceAccount in-cluster credentials"
+            _log.error(f"Syncing {log_context} failed and will be retried in {backoff_timeout} seconds. "
+                       f"Unexpected error: {e}")
             await asyncio.sleep(backoff_timeout)
 
 
