@@ -11,8 +11,8 @@ Prerequisites:
 
 import asyncio
 
-from kubesdk.login import login
 from kubesdk import (
+    login,
     create_k8s_resource,
     get_k8s_resource,
     update_k8s_resource,

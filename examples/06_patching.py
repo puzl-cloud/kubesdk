@@ -19,16 +19,17 @@ kubesdk automatically selects the best patch strategy based on:
 import asyncio
 from dataclasses import replace
 
-from kubesdk.login import login
 from kubesdk import (
+    login,
     create_k8s_resource,
     get_k8s_resource,
     update_k8s_resource,
     delete_k8s_resource,
     NotFoundError,
     ConflictError,
+    from_root_,
+    path_,
 )
-from kubesdk.path_picker import from_root_, path_
 
 from kube_models.api_v1.io.k8s.api.core.v1 import ConfigMap
 from kube_models.api_v1.io.k8s.apimachinery.pkg.apis.meta.v1 import ObjectMeta

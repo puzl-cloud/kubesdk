@@ -13,8 +13,8 @@ These configurations can be passed to any CRUD operation.
 
 import asyncio
 
-from kubesdk.login import login
 from kubesdk import (
+    login,
     get_k8s_resource,
     create_k8s_resource,
     delete_k8s_resource,

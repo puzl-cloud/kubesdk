@@ -15,9 +15,16 @@ Prerequisites:
 import asyncio
 from contextlib import suppress
 
-from kubesdk.login import login
-from kubesdk import create_k8s_resource, delete_k8s_resource, NotFoundError
-from kubesdk.client import watch_k8s_resources, WatchEventType, K8sQueryParams, QueryLabelSelector
+from kubesdk import (
+    login,
+    create_k8s_resource,
+    delete_k8s_resource,
+    NotFoundError,
+    watch_k8s_resources,
+    WatchEventType,
+    K8sQueryParams,
+    QueryLabelSelector,
+)
 from kube_models.api_v1.io.k8s.api.core.v1 import ConfigMap
 from kube_models.api_v1.io.k8s.apimachinery.pkg.apis.meta.v1 import ObjectMeta
 

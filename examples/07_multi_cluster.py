@@ -12,8 +12,9 @@ kubesdk manages separate connection pools for each cluster.
 
 import asyncio
 
-from kubesdk.login import login, KubeConfig
 from kubesdk import (
+    login,
+    KubeConfig,
     create_k8s_resource,
     get_k8s_resource,
     delete_k8s_resource,

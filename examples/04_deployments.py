@@ -16,15 +16,17 @@ Prerequisites:
 import asyncio
 from dataclasses import replace
 
-from kubesdk.login import login
 from kubesdk import (
+    login,
     create_k8s_resource,
     get_k8s_resource,
     update_k8s_resource,
     delete_k8s_resource,
+    K8sQueryParams,
+    QueryLabelSelector,
+    from_root_,
+    path_,
 )
-from kubesdk.client import K8sQueryParams, QueryLabelSelector
-from kubesdk.path_picker import from_root_, path_
 
 from kube_models.api_v1.io.k8s.api.core.v1 import (
     Container,
