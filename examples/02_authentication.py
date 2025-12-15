@@ -19,8 +19,7 @@ kubesdk automatically handles:
 import asyncio
 import os
 
-from kubesdk.login import login, KubeConfig
-from kubesdk.credentials import ServerInfo
+from kubesdk import login, KubeConfig, ServerInfo
 
 
 async def default_login() -> ServerInfo:
