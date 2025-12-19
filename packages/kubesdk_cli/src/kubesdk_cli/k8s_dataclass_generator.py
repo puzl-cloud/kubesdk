@@ -188,7 +188,7 @@ if sys.version_info < (3, 11):
 else:
     from typing import Self
 
-from .loader import LazyLoadModel, _LOAD_LAZY_FIELD, _LOAD_TYPES_ON_INIT
+from .loader import Loadable, _LOAD_LAZY_FIELD, _LOAD_TYPES_ON_INIT
 from .const import *
 
 from {module_name}.api_{meta_version}.io.k8s.apimachinery.pkg.apis.meta import ObjectMeta, ListMeta
@@ -198,7 +198,7 @@ _DYNAMIC_CLASS_VARS = ["apiVersion", "kind"]
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
-class K8sResource(LazyLoadModel):
+class K8sResource(Loadable):
     apiVersion: ClassVar[str]
     kind: ClassVar[str]
     metadata: ObjectMeta
@@ -324,7 +324,7 @@ async def generate_for_schema(
                 f"{module_name}.resource.*",
                 f"{module_name}.loader.*"
             ],
-            base_class=f"{module_name}.loader.LazyLoadModel",
+            base_class=f"{module_name}.loader.Loadable",
             enum_field_as_literal=LiteralType.All,
             use_exact_imports=True,
             treat_dot_as_module=True,

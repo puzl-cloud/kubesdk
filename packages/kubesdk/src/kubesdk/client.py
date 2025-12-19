@@ -24,7 +24,7 @@ else:
 
 import aiohttp
 
-from kube_models.loader import LazyLoadModel
+from kube_models.loader import Loadable
 from kube_models import get_model
 from kube_models.const import PatchRequestType, StrEnum
 from kube_models.resource import K8sResource, K8sResourceList
@@ -1050,7 +1050,7 @@ class WatchEventType(StrEnum):
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
-class K8sResourceEvent(LazyLoadModel, Generic[ResourceT]):
+class K8sResourceEvent(Loadable, Generic[ResourceT]):
     type: WatchEventType
     object: ResourceT | Status
 

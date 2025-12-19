@@ -6,11 +6,11 @@ import pkgutil
 from dataclasses import is_dataclass, MISSING
 from typing import Dict, Tuple, Optional, Type, Any
 
-from .loader import LazyLoadModel
+from .loader import Loadable
 from .resource import K8sResource, K8sResourceList
 
 
-__ALL_RESOURCES: Dict[Tuple[str, str], Type[LazyLoadModel]] = {}
+__ALL_RESOURCES: Dict[Tuple[str, str], Type[Loadable]] = {}
 
 # One-time guard
 __INDEX_BUILT: bool = False
@@ -97,7 +97,7 @@ def __build_index() -> None:
 __build_index()
 
 
-def get_model(api_version: str, kind: str) -> Type[LazyLoadModel]:
+def get_model(api_version: str, kind: str) -> Type[Loadable]:
     return __ALL_RESOURCES.get((api_version, kind))
 
 
@@ -108,9 +108,11 @@ def get_k8s_resource_model(api_version: str, kind: str) -> Type[K8sResource] | N
     return None
 
 
-def get_model_by_body(body: Dict) -> Type[LazyLoadModel]:
+def get_model_by_body(body: Dict) -> Type[Loadable]:
     api_version, kind = body.get("apiVersion"), body.get("kind")
     return get_model(api_version, kind)
 
 
-__all__ = ["get_k8s_resource_model", "get_model", "get_model_by_body", "K8sResource", "K8sResourceList"]
+__all__ = [
+    "get_k8s_resource_model", "get_model", "get_model_by_body", "K8sResource", "K8sResourceList", "Loadable"
+]
