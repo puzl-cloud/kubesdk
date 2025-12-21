@@ -313,65 +313,6 @@ if __name__ == "__main__":
 
 You can generate your custom resource models from your Kubernetes cluster API directly using CLI. Another option is to define them manually. Below is the example of a `FeatureFlag` CR.
 
-#### CRD
-
-This example assumes you have installed the CRD below in your Kubernetes cluster (automatic generation of the CRD yaml from your kubesdk models is coming in the near future versions of kubesdk).
-
-```yaml
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: featureflags.my-beautiful-saas.com
-spec:
-  group: my-beautiful-saas.com
-  scope: Namespaced
-  names:
-    plural: featureflags
-    singular: featureflag
-    kind: FeatureFlag
-    shortNames:
-      - ff
-  versions:
-    - name: v1alpha1
-      served: true
-      storage: true
-      subresources:
-        status: {}
-      schema:
-        openAPIV3Schema:
-          type: object
-          required: ["spec"]
-          properties:
-            spec:
-              type: object
-              required: ["canary_ingress"]
-              properties:
-                enabled:
-                  type: boolean
-                  default: false
-                rollout_percent:
-                  type: integer
-                  minimum: 0
-                  maximum: 100
-                  default: 0
-                canary_ingress:
-                  type: string
-                  minLength: 1
-            status:
-              type: object
-              x-kubernetes-preserve-unknown-fields: true
-      additionalPrinterColumns:
-        - name: Enabled
-          type: boolean
-          jsonPath: .spec.enabled
-        - name: Weight
-          type: integer
-          jsonPath: .spec.rollout_percent
-        - name: CanaryIngress
-          type: string
-          jsonPath: .spec.canary_ingress
-```
-
 #### Operator
 
 A `FeatureFlag` CR is a simple k8s resource that drives a progressive rollout by updating Nginx `Ingress` canary annotations (assumed you are using Nginx). 
@@ -441,16 +382,106 @@ if __name__ == "__main__":
     asyncio.run(operator())
 ```
 
-#### Apply FeatureFlag
+#### CRD
 
-To test your operator, apply the custom resource into cluster:
+This example assumes you have installed the CRD below in your Kubernetes cluster (automatic generation of the CRD yaml from your dataclasses is coming in the near future versions of kubesdk).
+
+```yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: featureflags.my-beautiful-saas.com
+spec:
+  group: my-beautiful-saas.com
+  scope: Namespaced
+  names:
+    plural: featureflags
+    singular: featureflag
+    kind: FeatureFlag
+    shortNames:
+      - ff
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: ["spec"]
+          properties:
+            spec:
+              type: object
+              required: ["canary_ingress"]
+              properties:
+                enabled:
+                  type: boolean
+                  default: false
+                rollout_percent:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                  default: 0
+                canary_ingress:
+                  type: string
+                  minLength: 1
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+      additionalPrinterColumns:
+        - name: Enabled
+          type: boolean
+          jsonPath: .spec.enabled
+        - name: Weight
+          type: integer
+          jsonPath: .spec.rollout_percent
+        - name: CanaryIngress
+          type: string
+          jsonPath: .spec.canary_ingress
+```
+
+```shell
+kubectl apply -f my-feature-flag-crd.yaml
+```
+
+#### Run and test the operator
+
+1. Create demo `Ingress` resource
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: checkout-canary
+  namespace: default
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: checkout-canary.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dummy-service
+                port:
+                  number: 80
+```
+
+```shell
+kubectl apply -f checkout-canary-ingress.yaml
+```
+
+2. Apply your `FeatureFlag` custom resource spec into cluster
 
 ```yaml
 apiVersion: my-beautiful-saas.com/v1alpha1
 kind: FeatureFlag
 metadata:
-  name: checkout-canary
-  namespace: default
+  name: checkout-canary  # the same as Ingress metadata.name
+  namespace: default  # in the same namespace 
 spec:
   enabled: true
   rollout_percent: 20
@@ -461,6 +492,18 @@ spec:
 kubectl apply -f checkout-canary-feature-flag.yaml
 ```
 
+3. Check both annotations' values
+
+```shell
+kubectl get ingress checkout-canary -n default -o jsonpath="{.metadata.annotations.nginx\.ingress\.kubernetes\.io/canary}{'\n'}{.metadata.annotations.nginx\.ingress\.kubernetes\.io/canary-weight}{'\n'}"
+```
+
+The command must return
+
+```
+true
+20
+```
 
 ### CLI
 
