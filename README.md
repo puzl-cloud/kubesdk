@@ -309,6 +309,159 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+### Custom Resource Definitions
+
+You can generate your custom resource models from your Kubernetes cluster API directly using CLI. Another option is to define them manually. Below is the example of a `FeatureFlag` CR.
+
+#### CRD
+
+This example assumes you have installed the CRD below in your Kubernetes cluster (automatic generation of the CRD yaml from your kubesdk models is coming in the near future versions of kubesdk).
+
+```yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: featureflags.my-beautiful-saas.com
+spec:
+  group: my-beautiful-saas.com
+  scope: Namespaced
+  names:
+    plural: featureflags
+    singular: featureflag
+    kind: FeatureFlag
+    shortNames:
+      - ff
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: ["spec"]
+          properties:
+            spec:
+              type: object
+              required: ["canary_ingress"]
+              properties:
+                enabled:
+                  type: boolean
+                  default: false
+                rollout_percent:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                  default: 0
+                canary_ingress:
+                  type: string
+                  minLength: 1
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+      additionalPrinterColumns:
+        - name: Enabled
+          type: boolean
+          jsonPath: .spec.enabled
+        - name: Weight
+          type: integer
+          jsonPath: .spec.rollout_percent
+        - name: CanaryIngress
+          type: string
+          jsonPath: .spec.canary_ingress
+```
+
+#### Operator
+
+A `FeatureFlag` CR is a simple k8s resource that drives a progressive rollout by updating Nginx `Ingress` canary annotations (assumed you are using Nginx). 
+- Operator watches `FeatureFlag` objects and sets `nginx.ingress.kubernetes.io/canary=true` and `nginx.ingress.kubernetes.io/canary-weight=<0..100>` on the referenced `spec.canary_ingress`. 
+- When the flag is disabled or resource is deleted, the operator forces the canary weight to `0` (no canary traffic).
+
+```python
+from __future__ import annotations
+
+import asyncio
+from dataclasses import dataclass
+
+from kubesdk import login, watch_k8s_resources, update_k8s_resource, WatchEventType, path_, from_root_
+from kube_models import K8sResource
+from kube_models.api_v1.io.k8s.apimachinery.pkg.apis.meta import ObjectMeta
+from kube_models.apis_networking_k8s_io_v1.io.k8s.api.networking.v1 import Ingress
+
+
+@dataclass(kw_only=True, frozen=True, slots=True)
+class FeatureFlagSpec:
+    enabled: bool = False
+    rollout_percent: int = 0  # 0..100
+
+    # Name of the canary Ingress (points to canary Service)
+    canary_ingress: str
+
+
+@dataclass(kw_only=True, frozen=True, slots=True)
+class FeatureFlag(K8sResource):
+    is_namespaced_ = True
+    group_ = "my-beautiful-saas.com"
+    plural_ = "featureflags"
+
+    apiVersion = f"{group_}/v1alpha1"
+    kind = "FeatureFlag"
+
+    spec: FeatureFlagSpec
+
+
+async def operator():
+    await login()
+
+    async for event in watch_k8s_resources(FeatureFlag):
+        if event.type == WatchEventType.BOOKMARK:
+            continue
+
+        flag = event.object
+        enabled = False if event.type == WatchEventType.DELETED else flag.spec.enabled
+        weight = int(flag.spec.rollout_percent or 0) if enabled else 0
+        desired_ingress = Ingress(metadata=ObjectMeta(
+            name=flag.spec.canary_ingress,
+            namespace=flag.metadata.namespace,
+            annotations={
+                "nginx.ingress.kubernetes.io/canary": "true",
+                "nginx.ingress.kubernetes.io/canary-weight": str(weight),
+            }
+        ))
+        path_to_update = path_(from_root_(Ingress).metadata.annotations)  # patch annotations only
+        await update_k8s_resource(
+            desired_ingress,
+            namespace=flag.metadata.namespace,
+            paths=[path_to_update]
+        )
+
+
+if __name__ == "__main__":
+    asyncio.run(operator())
+```
+
+#### Apply FeatureFlag
+
+To test your operator, apply the custom resource into cluster:
+
+```yaml
+apiVersion: my-beautiful-saas.com/v1alpha1
+kind: FeatureFlag
+metadata:
+  name: checkout-canary
+  namespace: default
+spec:
+  enabled: true
+  rollout_percent: 20
+  canary_ingress: checkout-canary
+```
+
+```shell
+kubectl apply -f checkout-canary-feature-flag.yaml
+```
+
+
 ### CLI
 
 Generate models directly from a live cluster OpenAPI:

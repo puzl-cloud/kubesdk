@@ -50,7 +50,8 @@ def cli() -> None:
         "const.py",
         "_resource_list_generics.py",
         "_resource_list_pep695.py",
-        "resource.py"
+        "resource.py",
+        "registry.py"
     ]
     prepare_module(models_path, templates_path, extra_globals)
     if args.url:

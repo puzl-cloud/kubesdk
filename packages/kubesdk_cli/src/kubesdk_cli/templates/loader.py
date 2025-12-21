@@ -14,6 +14,7 @@ if sys.version_info < (3, 11):
     from typing_extensions import Self
 
 from .const import *
+from .registry import register_model
 
 
 _CACHED_TYPES = {}
@@ -311,6 +312,7 @@ class _LoadableMeta(type):
     def __init__(cls, *args, **kwargs):
         super().__init__(*args, **kwargs)
         cls._ensure_typing_import()
+        register_model(cls)
 
     def __call__(cls, *args, **kwargs):
         new_kw: Dict[str, Any] = {}
@@ -372,8 +374,8 @@ class Loadable(metaclass=_LoadableMeta):
     """
     This model supports lazy loading of complex nested types avoiding unnecessary heavy recursions.
     """
-    _lazy_src: Dict = field(default_factory=dict)
-    _lazy: bool = field(default=False)
+    _lazy_src: Dict = field(default_factory=dict, repr=False)
+    _lazy: bool = field(default=False, repr=False)
 
     @classmethod
     def _ensure_typing_import(cls) -> None:
