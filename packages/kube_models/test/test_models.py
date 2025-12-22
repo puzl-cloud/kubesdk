@@ -29,6 +29,9 @@ class UtilsTest(TestCase):
         self.assertEqual("deployments", deployment.plural_)
         self.assertEqual(True, Deployment.is_namespaced_)
 
+    def test_defaults(self):
+        self.assertNotEquals(None, K8sResource.patch_strategies_)
+
     def test_loading(self):
         secret_instance = Secret(
             metadata=ObjectMeta(name="some-secret", namespace="default"),

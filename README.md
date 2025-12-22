@@ -325,7 +325,8 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
-from kubesdk import login, watch_k8s_resources, update_k8s_resource, WatchEventType, path_, from_root_
+from kubesdk import login, watch_k8s_resources, update_k8s_resource, WatchEventType, path_, from_root_, replace_, \
+    K8sAPIRequestLoggingConfig
 from kube_models import K8sResource, Loadable
 from kube_models.api_v1.io.k8s.apimachinery.pkg.apis.meta import ObjectMeta
 from kube_models.apis_networking_k8s_io_v1.io.k8s.api.networking.v1 import Ingress
@@ -353,29 +354,44 @@ class FeatureFlag(K8sResource):
 
 
 async def operator():
+    finalizer_name = FeatureFlag.group_
     await login()
 
     async for event in watch_k8s_resources(FeatureFlag):
         if event.type == WatchEventType.BOOKMARK:
             continue
 
-        flag = event.object
-        enabled = False if event.type == WatchEventType.DELETED else flag.spec.enabled
-        weight = int(flag.spec.rollout_percent or 0) if enabled else 0
+        flag, meta = event.object, event.object.metadata
+        deleting = meta.deletionTimestamp is not None
+        actually_enabled = False if deleting or event.type == WatchEventType.DELETED else flag.spec.enabled
+        weight = int(flag.spec.rollout_percent or 0) if actually_enabled else 0
+
+        # Add finalizer on create/normal updates (so we clean up on delete safely)
+        fin_path = path_(from_root_(FeatureFlag).metadata.finalizers)
+        if not deleting and event.type != WatchEventType.DELETED and finalizer_name not in meta.finalizers:
+            new_finalizers = meta.finalizers + [finalizer_name]
+            updated_flag = replace_(flag, fin_path, new_finalizers)
+            await update_k8s_resource(updated_flag, paths=[fin_path])  # patch finalizers only
+
+        new_annotations = {
+            "nginx.ingress.kubernetes.io/canary": "true",
+            "nginx.ingress.kubernetes.io/canary-weight": str(weight)
+        }
         desired_ingress = Ingress(metadata=ObjectMeta(
             name=flag.spec.canary_ingress,
-            namespace=flag.metadata.namespace,
-            annotations={
-                "nginx.ingress.kubernetes.io/canary": "true",
-                "nginx.ingress.kubernetes.io/canary-weight": str(weight),
-            }
+            namespace=meta.namespace,
+            annotations=new_annotations
         ))
-        path_to_update = path_(from_root_(Ingress).metadata.annotations)  # patch annotations only
-        await update_k8s_resource(
-            desired_ingress,
-            namespace=flag.metadata.namespace,
-            paths=[path_to_update]
-        )
+
+        annotations_path = path_(from_root_(Ingress).metadata.annotations)  # patch annotations only
+        await update_k8s_resource(desired_ingress, paths=[annotations_path])
+
+        # On delete: remove finalizer so the CR can be deleted
+        if deleting and finalizer_name in meta.finalizers:
+            new_finalizers = [f for f in meta.finalizers if f != finalizer_name]
+            updated_flag = replace_(flag, fin_path, new_finalizers)
+            do_not_log_404 = K8sAPIRequestLoggingConfig(not_error_statuses=[404])
+            await update_k8s_resource(updated_flag, paths=[fin_path], return_api_exceptions=[404], log=do_not_log_404)
 
 
 if __name__ == "__main__":

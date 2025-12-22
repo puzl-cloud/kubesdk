@@ -172,6 +172,7 @@ def write_inits(base_dir: str | Path, extra_globals: list[str] = None) -> None:
         init_path.write_text(content, encoding="utf-8")
 
 
+# ToDo: Move it into separate python file, need to solve dynamic meta import problem somehow
 def write_base_resource_py(base_dir: str | Path, module_name: str, meta_version: str):
     base = Path(base_dir).expanduser().resolve()
     resource_py_path = base / "_k8s_resource_base.py"
@@ -206,7 +207,14 @@ class K8sResource(Loadable):
     # OpenAPI fields which are not a part of the resource model
     plural_: ClassVar[str]
     group_: ClassVar[str]
-    patch_strategies_: ClassVar[Set[PatchRequestType]]
+    
+    # Defaults for any resource including CRDs
+    patch_strategies_: ClassVar[Set[PatchRequestType]] = {
+        PatchRequestType.json,
+        PatchRequestType.server_side_cbor,
+        PatchRequestType.server_side,
+        PatchRequestType.merge
+    }
     is_namespaced_: ClassVar[bool]
     
     @classmethod
