@@ -326,13 +326,13 @@ import asyncio
 from dataclasses import dataclass
 
 from kubesdk import login, watch_k8s_resources, update_k8s_resource, WatchEventType, path_, from_root_
-from kube_models import K8sResource
+from kube_models import K8sResource, Loadable
 from kube_models.api_v1.io.k8s.apimachinery.pkg.apis.meta import ObjectMeta
 from kube_models.apis_networking_k8s_io_v1.io.k8s.api.networking.v1 import Ingress
 
 
 @dataclass(kw_only=True, frozen=True, slots=True)
-class FeatureFlagSpec:
+class FeatureFlagSpec(Loadable):
     enabled: bool = False
     rollout_percent: int = 0  # 0..100
 
@@ -404,8 +404,6 @@ spec:
     - name: v1alpha1
       served: true
       storage: true
-      subresources:
-        status: {}
       schema:
         openAPIV3Schema:
           type: object
@@ -426,9 +424,6 @@ spec:
                 canary_ingress:
                   type: string
                   minLength: 1
-            status:
-              type: object
-              x-kubernetes-preserve-unknown-fields: true
       additionalPrinterColumns:
         - name: Enabled
           type: boolean
