@@ -24,7 +24,7 @@ else:
 
 import aiohttp
 
-from kube_models.loader import LazyLoadModel
+from kube_models.loader import Loadable
 from kube_models import get_model
 from kube_models.const import PatchRequestType, StrEnum
 from kube_models.resource import K8sResource, K8sResourceList
@@ -42,7 +42,7 @@ _log = logging.getLogger(__name__)
 
 @dataclass(kw_only=True)
 class APIRequestProcessingConfig:
-    http_timeout: int = field(default=30)
+    http_timeout: int | None = field(default=None)
     backoff_limit: int = field(default=3)
     backoff_interval: int | Callable[[int], int] = field(default=5)
     retry_statuses: Sequence[int | Type[RESTAPIError]] = field(default_factory=list)
@@ -453,9 +453,10 @@ def __build_request_url(resource: Type[K8sResource] | K8sResource, name: str = N
         name = name or resource.metadata.name
 
     if resource.is_namespaced_:
-        if not ns:
-            raise ValueError(f"Resource {resource.apiVersion} is namespaced, but no namespace specified in the metadata")
-        url = resource.api_path().format(namespace=ns)
+        if ns:
+            url = resource.api_path().format(namespace=ns)
+        else:
+            url = resource.api_path().replace("/namespaces/{namespace}", "")
     else:
         if ns:
             raise ValueError(f"Resource {resource.apiVersion} is cluster scoped, "
@@ -1050,7 +1051,7 @@ class WatchEventType(StrEnum):
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
-class K8sResourceEvent(LazyLoadModel, Generic[ResourceT]):
+class K8sResourceEvent(Loadable, Generic[ResourceT]):
     type: WatchEventType
     object: ResourceT | Status
 

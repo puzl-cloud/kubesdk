@@ -21,7 +21,9 @@ The core client library, which you install and use in your project.
 
 ## `kube-models`
 
-Pre-generated Python models for all upstream Kubernetes APIs, for every Kubernetes version **1.23+**. Separate models package gives you ability to use latest client version with legacy Kubernetes APIs and vice versa.
+Pre-generated Python models for all upstream Kubernetes APIs, for every Kubernetes version **1.23+**. All Kubernetes APIs are bundled under a single `kube-models` package version, so you don’t end up in model-versioning hell. 
+
+Separate models package gives you ability to use latest client version with legacy Kubernetes APIs and vice versa.
 
 You can find the latest generated models [here](https://github.com/puzl-cloud/kube-models). They are automatically uploaded to an external repository to avoid increasing the size of the main `kubesdk` repo.
 
@@ -305,6 +307,213 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+```
+
+### Custom Resource Definitions
+
+You can generate your custom resource models from your Kubernetes cluster API directly using CLI. Another option is to define them manually. Below is the example of a `FeatureFlag` CR.
+
+#### Operator
+
+A `FeatureFlag` CR is a simple k8s resource that drives a progressive rollout by updating Nginx `Ingress` canary annotations (assumed you are using Nginx). 
+- Operator watches `FeatureFlag` objects and sets `nginx.ingress.kubernetes.io/canary=true` and `nginx.ingress.kubernetes.io/canary-weight=<0..100>` on the referenced `spec.canary_ingress`. 
+- When the flag is disabled or resource is deleted, the operator forces the canary weight to `0` (no canary traffic).
+
+```python
+from __future__ import annotations
+
+import asyncio
+from dataclasses import dataclass
+
+from kubesdk import login, watch_k8s_resources, update_k8s_resource, WatchEventType, path_, from_root_, replace_, \
+    K8sAPIRequestLoggingConfig
+from kube_models import K8sResource, Loadable
+from kube_models.api_v1.io.k8s.apimachinery.pkg.apis.meta import ObjectMeta
+from kube_models.apis_networking_k8s_io_v1.io.k8s.api.networking.v1 import Ingress
+
+
+@dataclass(kw_only=True, frozen=True, slots=True)
+class FeatureFlagSpec(Loadable):
+    enabled: bool = False
+    rollout_percent: int = 0  # 0..100
+
+    # Name of the canary Ingress (points to canary Service)
+    canary_ingress: str
+
+
+@dataclass(kw_only=True, frozen=True, slots=True)
+class FeatureFlag(K8sResource):
+    is_namespaced_ = True
+    group_ = "my-beautiful-saas.com"
+    plural_ = "featureflags"
+
+    apiVersion = f"{group_}/v1alpha1"
+    kind = "FeatureFlag"
+
+    spec: FeatureFlagSpec
+
+
+async def operator():
+    finalizer_name = FeatureFlag.group_
+    await login()
+
+    async for event in watch_k8s_resources(FeatureFlag):
+        if event.type == WatchEventType.BOOKMARK:
+            continue
+
+        flag, meta = event.object, event.object.metadata
+        deleting = meta.deletionTimestamp is not None
+        actually_enabled = False if deleting or event.type == WatchEventType.DELETED else flag.spec.enabled
+        weight = int(flag.spec.rollout_percent or 0) if actually_enabled else 0
+
+        # Add finalizer on create/normal updates (so we clean up on delete safely)
+        fin_path = path_(from_root_(FeatureFlag).metadata.finalizers)
+        if not deleting and event.type != WatchEventType.DELETED and finalizer_name not in meta.finalizers:
+            new_finalizers = meta.finalizers + [finalizer_name]
+            updated_flag = replace_(flag, fin_path, new_finalizers)
+            await update_k8s_resource(updated_flag, paths=[fin_path])  # patch finalizers only
+
+        new_annotations = {
+            "nginx.ingress.kubernetes.io/canary": "true",
+            "nginx.ingress.kubernetes.io/canary-weight": str(weight)
+        }
+        desired_ingress = Ingress(metadata=ObjectMeta(
+            name=flag.spec.canary_ingress,
+            namespace=meta.namespace,
+            annotations=new_annotations
+        ))
+
+        annotations_path = path_(from_root_(Ingress).metadata.annotations)  # patch annotations only
+        await update_k8s_resource(desired_ingress, paths=[annotations_path])
+
+        # On delete: remove finalizer so the CR can be deleted
+        if deleting and finalizer_name in meta.finalizers:
+            new_finalizers = [f for f in meta.finalizers if f != finalizer_name]
+            updated_flag = replace_(flag, fin_path, new_finalizers)
+            do_not_log_404 = K8sAPIRequestLoggingConfig(not_error_statuses=[404])
+            await update_k8s_resource(updated_flag, paths=[fin_path], return_api_exceptions=[404], log=do_not_log_404)
+
+
+if __name__ == "__main__":
+    asyncio.run(operator())
+```
+
+#### CRD
+
+This example assumes you have installed the CRD below in your Kubernetes cluster (automatic generation of the CRD yaml from your dataclasses is coming in the near future versions of kubesdk).
+
+```yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: featureflags.my-beautiful-saas.com
+spec:
+  group: my-beautiful-saas.com
+  scope: Namespaced
+  names:
+    plural: featureflags
+    singular: featureflag
+    kind: FeatureFlag
+    shortNames:
+      - ff
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: ["spec"]
+          properties:
+            spec:
+              type: object
+              required: ["canary_ingress"]
+              properties:
+                enabled:
+                  type: boolean
+                  default: false
+                rollout_percent:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                  default: 0
+                canary_ingress:
+                  type: string
+                  minLength: 1
+      additionalPrinterColumns:
+        - name: Enabled
+          type: boolean
+          jsonPath: .spec.enabled
+        - name: Weight
+          type: integer
+          jsonPath: .spec.rollout_percent
+        - name: CanaryIngress
+          type: string
+          jsonPath: .spec.canary_ingress
+```
+
+```shell
+kubectl apply -f my-feature-flag-crd.yaml
+```
+
+#### Run and test the operator
+
+1. Create demo `Ingress` resource
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: checkout-canary
+  namespace: default
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: checkout-canary.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dummy-service
+                port:
+                  number: 80
+```
+
+```shell
+kubectl apply -f checkout-canary-ingress.yaml
+```
+
+2. Apply your `FeatureFlag` custom resource spec into cluster
+
+```yaml
+apiVersion: my-beautiful-saas.com/v1alpha1
+kind: FeatureFlag
+metadata:
+  name: checkout-canary  # the same as Ingress metadata.name
+  namespace: default  # in the same namespace 
+spec:
+  enabled: true
+  rollout_percent: 20
+  canary_ingress: checkout-canary
+```
+
+```shell
+kubectl apply -f checkout-canary-feature-flag.yaml
+```
+
+3. Check both annotations' values
+
+```shell
+kubectl get ingress checkout-canary -n default -o jsonpath="{.metadata.annotations.nginx\.ingress\.kubernetes\.io/canary}{'\n'}{.metadata.annotations.nginx\.ingress\.kubernetes\.io/canary-weight}{'\n'}"
+```
+
+The command must return
+
+```
+true
+20
 ```
 
 ### CLI

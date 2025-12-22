@@ -172,6 +172,7 @@ def write_inits(base_dir: str | Path, extra_globals: list[str] = None) -> None:
         init_path.write_text(content, encoding="utf-8")
 
 
+# ToDo: Move it into separate python file, need to solve dynamic meta import problem somehow
 def write_base_resource_py(base_dir: str | Path, module_name: str, meta_version: str):
     base = Path(base_dir).expanduser().resolve()
     resource_py_path = base / "_k8s_resource_base.py"
@@ -188,7 +189,7 @@ if sys.version_info < (3, 11):
 else:
     from typing import Self
 
-from .loader import LazyLoadModel, _LOAD_LAZY_FIELD, _LOAD_TYPES_ON_INIT
+from .loader import Loadable, _LOAD_LAZY_FIELD, _LOAD_TYPES_ON_INIT
 from .const import *
 
 from {module_name}.api_{meta_version}.io.k8s.apimachinery.pkg.apis.meta import ObjectMeta, ListMeta
@@ -198,7 +199,7 @@ _DYNAMIC_CLASS_VARS = ["apiVersion", "kind"]
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
-class K8sResource(LazyLoadModel):
+class K8sResource(Loadable):
     apiVersion: ClassVar[str]
     kind: ClassVar[str]
     metadata: ObjectMeta
@@ -206,7 +207,14 @@ class K8sResource(LazyLoadModel):
     # OpenAPI fields which are not a part of the resource model
     plural_: ClassVar[str]
     group_: ClassVar[str]
-    patch_strategies_: ClassVar[Set[PatchRequestType]]
+    
+    # Defaults for any resource including CRDs
+    patch_strategies_: ClassVar[Set[PatchRequestType]] = {
+        PatchRequestType.json,
+        PatchRequestType.server_side_cbor,
+        PatchRequestType.server_side,
+        PatchRequestType.merge
+    }
     is_namespaced_: ClassVar[bool]
     
     @classmethod
@@ -324,7 +332,7 @@ async def generate_for_schema(
                 f"{module_name}.resource.*",
                 f"{module_name}.loader.*"
             ],
-            base_class=f"{module_name}.loader.LazyLoadModel",
+            base_class=f"{module_name}.loader.Loadable",
             enum_field_as_literal=LiteralType.All,
             use_exact_imports=True,
             treat_dot_as_module=True,

@@ -321,7 +321,7 @@ class APIContext:
                 connector=aiohttp.TCPConnector(
                     limit=MAX_STREAMS_PER_LOOP if stream else 100,
                     ssl=ssl_context,
-                    keepalive_timeout=30
+                    keepalive_timeout=120 if not stream else None
                 ),
                 timeout=aiohttp.ClientTimeout(total=60),
                 read_bufsize=2 ** 21,  # 2 MB (4MB effective limit). Enough for the default k8s object limit of 1MB.

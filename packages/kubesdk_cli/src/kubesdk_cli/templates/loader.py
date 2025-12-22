@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import logging
+import typing
 from datetime import datetime
 from base64 import b64encode
 import json
@@ -13,6 +14,7 @@ if sys.version_info < (3, 11):
     from typing_extensions import Self
 
 from .const import *
+from .registry import register_model
 
 
 _CACHED_TYPES = {}
@@ -298,7 +300,7 @@ def _to_immutable(v: Any) -> Any:
         return repr(v)
 
 
-class _LazyLoadMeta(type):
+class _LoadableMeta(type):
     """
     A metaclass for dataclasses to automatically decode fields during initialization
     based on the metadata configuration and typing.
@@ -307,14 +309,19 @@ class _LazyLoadMeta(type):
     decoder functions (if any) from the field metadata before passing the arguments
     to the original ``__init__`` method.
     """
+    def __init__(cls, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        cls._ensure_typing_import()
+        register_model(cls)
+
     def __call__(cls, *args, **kwargs):
         new_kw: Dict[str, Any] = {}
-        supports_lazy = issubclass(cls, LazyLoadModel)
+        supports_lazy = issubclass(cls, Loadable)
         lazy_requested = kwargs.get(_LOAD_LAZY_FIELD)
         should_use_lazy = supports_lazy and lazy_requested
         if not getattr(cls, "__lazy_methods_patched", False):
-            cls.__eq__ = LazyLoadModel.__eq__
-            cls.__hash__ = LazyLoadModel.__hash__
+            cls.__eq__ = Loadable.__eq__
+            cls.__hash__ = Loadable.__hash__
             cls.__lazy_methods_patched = True
 
         if not should_use_lazy:
@@ -363,12 +370,26 @@ class _LazyLoadMeta(type):
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
-class LazyLoadModel(metaclass=_LazyLoadMeta):
+class Loadable(metaclass=_LoadableMeta):
     """
     This model supports lazy loading of complex nested types avoiding unnecessary heavy recursions.
     """
-    _lazy_src: Dict = field(default_factory=dict)
-    _lazy: bool = field(default=False)
+    _lazy_src: Dict = field(default_factory=dict, repr=False)
+    _lazy: bool = field(default=False, repr=False)
+
+    @classmethod
+    def _ensure_typing_import(cls) -> None:
+        module = sys.modules.get(cls.__module__)
+        if not module:
+            return
+        _globals = module.__dict__
+        if _globals.get("__KUBESDK_TYPING_STAR_DONE"):
+            return
+
+        # from typing import * into class module
+        for name in getattr(typing, "__all__", ()):
+            _globals.setdefault(name, getattr(typing, name))
+        _globals["__KUBESDK_TYPING_STAR_DONE"] = True
 
     @classmethod
     def from_dict(cls, src: dict[str, Any], lazy: bool = True) -> Self:
