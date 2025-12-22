@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import unittest
+import pkgutil
+import importlib
 from dataclasses import dataclass, field
 
+import kube_models
 from kube_models.registry import ALL_RESOURCES, register_model, maybe_get_model_key, get_model_by_body, get_model
 
 
@@ -92,3 +95,17 @@ class TestRegistry(unittest.TestCase):
         self.assertIsNone(get_model_by_body({"apiVersion": None, "kind": "Service"}))
 
         self.assertIs(BodyModel, get_model_by_body({"apiVersion": "v1", "kind": "Service"}))
+
+    def test_import_all(self):
+        initial_len = len(ALL_RESOURCES)
+        pkg = kube_models
+        prefix = pkg.__name__ + "."
+        for _finder, modname, _ispkg in pkgutil.walk_packages(pkg.__path__, prefix=prefix):
+            # Skip private files/modules
+            if modname.rsplit(".", 1)[-1].startswith("_"):
+                continue
+
+            importlib.import_module(modname)
+
+        final_len = len(ALL_RESOURCES)
+        self.assertGreater(final_len, initial_len)
