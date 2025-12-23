@@ -30,7 +30,7 @@ classifiers = [
 dependencies = [
     "aiohttp==3.12.15",
     "PyYAML==6.0.3",
-    "kube-models>=0.3"
+    "kube-models>=0.2"
 ]
 
 [dependency-groups]
