@@ -340,8 +340,9 @@ DEFAULT_LOGGING.on_success = True
 
 @dataclass(kw_only=True, frozen=True, slots=True)
 class FeatureFlagSpec(Loadable):
-    enabled: bool = False
-    rollout_percent: int = 0  # 0..100
+    # You can use standard k8s property settings in CRDFieldSpec
+    enabled: bool = crd_field(spec=CRDFieldSpec(default=False))
+    rollout_percent: int = crd_field(spec=CRDFieldSpec(minimum=0, maximum=100, default=0))
 
     # Name of the canary Ingress (points to canary Service)
     # PrinterColumn will show this field's value in `Ingress` column in kubectl output
