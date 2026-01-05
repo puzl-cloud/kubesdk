@@ -55,7 +55,7 @@ for K8S_VERSION in ${K8S_VERSIONS}; do
     K8S_VERSION_DIR="${OPENAPI_SPEC_DIR}/${K8S_VERSION}"
     
     echo "Generate python Data Model for k8s version: ${K8S_VERSION}"
-    uv run packages/kubesdk_cli/src/kubesdk_cli/cli.py \
+    uv run packages/kubesdk_cli/src/kubesdk_cli/cli.py generate models \
         --from-dir "${K8S_VERSION_DIR}/${K8S_OPENAPI_SPEC_PATH}" \
         --output "${DATA_MODEL_DIR}"
 done

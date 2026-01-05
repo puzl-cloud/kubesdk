@@ -215,7 +215,8 @@ async def _raw_api_request(
         "API": api_name,
         "url": url,
         "method": method,
-        "request": data if log.request_body else None
+        "request": data if log.request_body else None,
+        "content_type": headers.get("Content-Type") or headers.get("content-type")
     }
     _log.debug(f"Requesting {api_name} API", extra=extra_log)
     attempt = 0
@@ -825,7 +826,7 @@ async def update_k8s_resource(
         # force overrides everything
         if force:
             method = HTTPMethod.PUT
-            content_type = "application/json"
+            content_type = PatchRequestType.plain_json
             request_data = resource.to_dict()
 
         # If we have version to compare with, find the diff between them
@@ -877,7 +878,7 @@ async def update_k8s_resource(
             method=method,
             url=url,
             params=params.to_http_params() if params else None,
-            headers=headers | {"Content-Type": content_type},
+            headers=headers | {"Content-Type": content_type.value},
             data=request_data,
             processing=processing,
             log=log,

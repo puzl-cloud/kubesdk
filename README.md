@@ -320,6 +320,7 @@ A `FeatureFlag` CR is a simple k8s resource that drives a progressive rollout by
 - When the flag is disabled or resource is deleted, the operator forces the canary weight to `0` (no canary traffic).
 
 ```python
+# operator.py
 from __future__ import annotations
 
 import asyncio
@@ -327,9 +328,14 @@ from dataclasses import dataclass
 
 from kubesdk import login, watch_k8s_resources, update_k8s_resource, WatchEventType, path_, from_root_, replace_, \
     K8sAPIRequestLoggingConfig
-from kube_models import K8sResource, Loadable
+from kubesdk.crd import CustomK8sResourceDefinition, CustomK8sResource, crd_field, PrinterColumn, CRDFieldSpec
+from kube_models import Loadable
 from kube_models.api_v1.io.k8s.apimachinery.pkg.apis.meta import ObjectMeta
 from kube_models.apis_networking_k8s_io_v1.io.k8s.api.networking.v1 import Ingress
+
+# Log each API request
+from kubesdk.client import DEFAULT_LOGGING
+DEFAULT_LOGGING.on_success = True
 
 
 @dataclass(kw_only=True, frozen=True, slots=True)
@@ -338,11 +344,12 @@ class FeatureFlagSpec(Loadable):
     rollout_percent: int = 0  # 0..100
 
     # Name of the canary Ingress (points to canary Service)
-    canary_ingress: str
+    # PrinterColumn will show this field's value in `Ingress` column in kubectl output
+    canary_ingress: str = crd_field(spec=CRDFieldSpec(printer_column=PrinterColumn(name="Ingress")))
 
 
 @dataclass(kw_only=True, frozen=True, slots=True)
-class FeatureFlag(K8sResource):
+class FeatureFlagV1Alpha1(CustomK8sResource):
     is_namespaced_ = True
     group_ = "my-beautiful-saas.com"
     plural_ = "featureflags"
@@ -353,11 +360,17 @@ class FeatureFlag(K8sResource):
     spec: FeatureFlagSpec
 
 
+@dataclass
+class FeatureFlagCRD(CustomK8sResourceDefinition):
+    versions = [FeatureFlagV1Alpha1]
+    crd_short_names_ = ["ff"]
+
+
 async def operator():
-    finalizer_name = FeatureFlag.group_
+    finalizer_name = FeatureFlagV1Alpha1.group_
     await login()
 
-    async for event in watch_k8s_resources(FeatureFlag):
+    async for event in watch_k8s_resources(FeatureFlagV1Alpha1):
         if event.type == WatchEventType.BOOKMARK:
             continue
 
@@ -367,7 +380,7 @@ async def operator():
         weight = int(flag.spec.rollout_percent or 0) if actually_enabled else 0
 
         # Add finalizer on create/normal updates (so we clean up on delete safely)
-        fin_path = path_(from_root_(FeatureFlag).metadata.finalizers)
+        fin_path = path_(from_root_(FeatureFlagV1Alpha1).metadata.finalizers)
         if not deleting and event.type != WatchEventType.DELETED and finalizer_name not in meta.finalizers:
             new_finalizers = meta.finalizers + [finalizer_name]
             updated_flag = replace_(flag, fin_path, new_finalizers)
@@ -400,60 +413,11 @@ if __name__ == "__main__":
 
 #### CRD
 
-This example assumes you have installed the CRD below in your Kubernetes cluster (automatic generation of the CRD yaml from your dataclasses is coming in the near future versions of kubesdk).
-
-```yaml
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: featureflags.my-beautiful-saas.com
-spec:
-  group: my-beautiful-saas.com
-  scope: Namespaced
-  names:
-    plural: featureflags
-    singular: featureflag
-    kind: FeatureFlag
-    shortNames:
-      - ff
-  versions:
-    - name: v1alpha1
-      served: true
-      storage: true
-      schema:
-        openAPIV3Schema:
-          type: object
-          required: ["spec"]
-          properties:
-            spec:
-              type: object
-              required: ["canary_ingress"]
-              properties:
-                enabled:
-                  type: boolean
-                  default: false
-                rollout_percent:
-                  type: integer
-                  minimum: 0
-                  maximum: 100
-                  default: 0
-                canary_ingress:
-                  type: string
-                  minLength: 1
-      additionalPrinterColumns:
-        - name: Enabled
-          type: boolean
-          jsonPath: .spec.enabled
-        - name: Weight
-          type: integer
-          jsonPath: .spec.rollout_percent
-        - name: CanaryIngress
-          type: string
-          jsonPath: .spec.canary_ingress
-```
+Before running the operator, you need to generate and apply your CRD in the Kubernetes cluster. Call generator in the dir with your `operator.py` from above:
 
 ```shell
-kubectl apply -f my-feature-flag-crd.yaml
+kubesdk generate crd --from-dir . --output ./my-crd
+kubectl apply -f ./my-crd/featureflags.my-beautiful-saas.yaml
 ```
 
 #### Run and test the operator
@@ -521,17 +485,10 @@ true
 Generate models directly from a live cluster OpenAPI:
 
 ```shell
-kubesdk \
+kubesdk generate models \
   --url https://my-cluster.example.com:6443 \
   --output ./kube_models \
   --module-name kube_models \
   --http-headers "Authorization: Bearer $(cat /path/to/token)" \
   --skip-tls
 ```
-
-## Near-term roadmap
-
-- [x] Publish client benchmark suite and results
-- [ ] Add contributor guide and contribution workflow
-- [ ] Ship detailed API and usage documentation
-- [ ] CRD YAML generator from your dataclasses

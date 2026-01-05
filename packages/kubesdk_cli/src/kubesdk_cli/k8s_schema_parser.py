@@ -41,6 +41,9 @@ from kubesdk_cli.templates.const import *
 from kubesdk_cli.const import *
 
 
+NON_SCALAR_TYPES: list[type] = [list, dict, tuple, set]
+
+
 class EmptyComponents(Exception): ...
 
 
@@ -656,6 +659,11 @@ class OpenAPIK8sParser(OpenAPIParser):
             # Do not allow mutable defaults in any case
             field.default = None if not field.default else field.default
 
+            field.extras, dataclass_meta = field.extras or {}, {}
+            if field.name != field.original_name:
+                dataclass_meta["original_name"] = field.original_name
+                field.extras |= {"metadata": dataclass_meta}
+
             if is_k8s_resource:
                 if field.name == "kind":
                     field.data_type = DataType(type="ClassVar[str]")
@@ -669,13 +677,12 @@ class OpenAPIK8sParser(OpenAPIParser):
                     continue
                 if field.name == "metadata":
                     field.nullable = False
-                    extras = field.extras or {}
-                    field.extras = extras | {"default_factory": "ObjectMeta"}
+                    field.extras |= {"default_factory": "ObjectMeta"}
                     continue
 
             # Find original property to get its merge key if any
             for name, prop in obj.properties.items():
-                if name != field.name:
+                if name != field.original_name:
                     continue
 
                 if is_object_meta:
@@ -683,29 +690,30 @@ class OpenAPIK8sParser(OpenAPIParser):
                         field.extras |= {"default_factory": "dict"}
                         continue
 
-                if not prop.extras:
-                    continue
-                meta = {}
-                if PATCH_STRATEGY in prop.extras:
-                    meta[PATCH_STRATEGY] = prop.extras[PATCH_STRATEGY]
-                if PATCH_MERGE_KEY in prop.extras:
-                    meta[PATCH_MERGE_KEY] = prop.extras[PATCH_MERGE_KEY]
-                if meta:
-                    extras = field.extras or {}
+                extras = prop.extras or {}
+                if PATCH_STRATEGY in extras:
+                    dataclass_meta[PATCH_STRATEGY] = extras[PATCH_STRATEGY]
+                if PATCH_MERGE_KEY in extras:
+                    dataclass_meta[PATCH_MERGE_KEY] = extras[PATCH_MERGE_KEY]
 
-                    # Set defaults for optional fields forcibly. Original generator has a logical bug here
-                    # https://github.com/koxudaxi/datamodel-code-generator/blob/d2b89bb5fe8bbe27116db15c4b7c2b4735da4f85/src/datamodel_code_generator/model/dataclass.py#L123
-                    if not field.required:
-                        if field.default is not None:
-                            if type(field.default) in SCALAR_TYPES:
-                                extras |= {"default": field.default}
-                            else:
-                                extras |= {"default_factory": str(field.default)}
-                        elif field.type_hint.startswith("List["):
-                            extras |= {"default_factory": "list"}
+            if dataclass_meta:
+                # Set defaults for optional fields forcibly. Original generator has a logical bug here
+                # https://github.com/koxudaxi/datamodel-code-generator/blob/d2b89bb5fe8bbe27116db15c4b7c2b4735da4f85/src/datamodel_code_generator/model/dataclass.py#L123
+                if not field.required:
+                    if field.default is not None:
+                        if type(field.default) in SCALAR_TYPES:
+                            field.extras |= {"default": field.default}
                         else:
-                            extras |= {"default_factory": "dict"}
-                    field.extras = extras | {"metadata": meta}
+                            field.extras |= {"default_factory": str(field.default)}
+                    else:
+                        for non_scalar in NON_SCALAR_TYPES:
+                            if field.type_hint.lower().startswith(non_scalar.__name__):
+                                field.extras |= {"default_factory": non_scalar.__name__}
+                                break
+                        if "default_factory" not in field.extras:
+                            field.extras |= {"default_factory": "lambda: None"}
+
+                field.extras |= {"metadata": dataclass_meta}
 
         return fields
 

@@ -96,7 +96,6 @@ def write_inits(base_dir: str | Path, extra_globals: list[str] = None) -> None:
     base = Path(base_dir).expanduser().resolve()
 
     extra_globals = extra_globals or []
-    # loader_import: str = f"from {base.name}.loader import loader as __loader"
 
     for root, dirs, files in os.walk(base):
         pkg_dir = Path(root)
@@ -128,17 +127,12 @@ def write_inits(base_dir: str | Path, extra_globals: list[str] = None) -> None:
                 import_lines.append(f"from .{mod} import {names}")
                 all_exports.extend(sorted(exports))
 
-            # wrap exported dataclasses at package scope
-            # for cls in sorted(dcs & exports):
-            #     wrap_exported_lines.append(f"{cls} = __loader({cls})")
-
             # wrap non-exported dataclasses inside their own module (no re-export)
             hidden = sorted(dcs - exports)
             if hidden:
                 wrap_internal_lines.append(f"from . import {mod} as __mod_{mod}")
                 for cls in hidden:
                     wrap_internal_lines.append(f"from .{mod} import {cls} as __{mod}_{cls}")
-                    # wrap_internal_lines.append(f"__mod_{mod}.{cls} = __loader(__{mod}_{cls})")
                     wrap_internal_lines.append(f"del __{mod}_{cls}")
                 wrap_internal_lines.append(f"del __mod_{mod}")
 
@@ -235,8 +229,8 @@ class K8sResource(Loadable):
             cls.__api_path = f"{base}{namespaced_path}/{cls.plural_}"
             return cls.__api_path
 
-    def to_dict(self) -> Dict[str, Any]:
-        res = super(K8sResource, self).to_dict()
+    def to_dict(self, drop_nones: bool = False) -> Dict[str, Any]:
+        res = super(K8sResource, self).to_dict(drop_nones)
         for var in _DYNAMIC_CLASS_VARS:
             res[var] = getattr(self, var)
         return res
