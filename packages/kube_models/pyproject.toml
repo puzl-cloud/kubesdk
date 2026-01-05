@@ -11,7 +11,7 @@ readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Nik Paushkin", email = "nik@puzl.cloud" }]
 keywords = [
-  "kubesdk", "kube-models"
+  "kubesdk", "kubernetes", "models"
 ]
 classifiers = [
   "Development Status :: 5 - Production/Stable",

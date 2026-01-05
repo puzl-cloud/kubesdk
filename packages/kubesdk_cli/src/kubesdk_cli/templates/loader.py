@@ -4,8 +4,6 @@ import sys
 import logging
 import typing
 from datetime import datetime
-from base64 import b64encode
-import json
 from dataclasses import is_dataclass, fields, field, dataclass, Field
 from typing import *
 from types import UnionType
@@ -16,12 +14,33 @@ if sys.version_info < (3, 11):
 from .const import *
 from .registry import register_model
 
+# Cache for dynamic typing resolver
+__RESOLVED_TYPES = {}
 
-_CACHED_TYPES = {}
-
-_LOAD_TYPES_ON_INIT = "__should_load"
+# Internal non-init model fields
 _LOAD_LAZY_FIELD = "_lazy"
 _LAZY_SRC_FIELD = "_lazy_src"
+_UNKNOWN_FIELDS_FIELD = "_unknown_fields"
+_INTERNAL_FIELDS = (_LOAD_LAZY_FIELD, _LAZY_SRC_FIELD, _UNKNOWN_FIELDS_FIELD)
+
+_LOAD_TYPES_ON_INIT = "__should_load"
+_ORIGINAL_NAME_KEY = "original_name"
+
+
+def _merged_globalns_for_hints(cls: type) -> dict[str, object]:
+    ns: dict[str, object] = {}
+
+    # Start with typing so ClassVar/Optional/etc are always there
+    ns.update(typing.__dict__)
+
+    # Then add module globals for every class in the MRO (base -> derived)
+    # so derived overrides base on conflicts.
+    for c in reversed(cls.__mro__):
+        mod = sys.modules.get(c.__module__)
+        if mod is not None:
+            ns.update(mod.__dict__)
+
+    return ns
 
 
 def _supports_lazy_load(obj: Any) -> bool:
@@ -155,8 +174,8 @@ def _evaluate_value(field_type: Any, field_value: Any, use_lazy: bool = False) -
         passed_field_type = field_type
 
         # Use cache to avoid useless recursions every time
-        if passed_field_type in _CACHED_TYPES:
-            cached_field_type = _CACHED_TYPES[passed_field_type]
+        if passed_field_type in __RESOLVED_TYPES:
+            cached_field_type = __RESOLVED_TYPES[passed_field_type]
 
             # We cache None for all scalars
             if cached_field_type is None:
@@ -178,12 +197,12 @@ def _evaluate_value(field_type: Any, field_value: Any, use_lazy: bool = False) -
         field_type_origin = get_origin(field_type)
         if any(field_type_origin is scalar for scalar in SCALAR_TYPES):
             # Cache None for scalars
-            _CACHED_TYPES[passed_field_type] = None
+            __RESOLVED_TYPES[passed_field_type] = None
             return field_value
 
         # Check if the field type is a dataclass and if kwargs value is a dict
         if isinstance(field_type, type) and is_dataclass(field_type) and isinstance(field_value, dict):
-            _CACHED_TYPES[passed_field_type] = field_type
+            __RESOLVED_TYPES[passed_field_type] = field_type
             injected_kw = _inject_lazy_load(field_type, field_value, use_lazy)
             return field_type(**injected_kw)
 
@@ -200,7 +219,7 @@ def _evaluate_value(field_type: Any, field_value: Any, use_lazy: bool = False) -
                 ]
 
             # Cache untyped general list
-            _CACHED_TYPES[passed_field_type] = None
+            __RESOLVED_TYPES[passed_field_type] = None
             return field_value
 
         # Handle Dict[SomeType, SomeDataClass]
@@ -216,7 +235,7 @@ def _evaluate_value(field_type: Any, field_value: Any, use_lazy: bool = False) -
                 }
 
             # Cache untyped general dict
-            _CACHED_TYPES[passed_field_type] = None
+            __RESOLVED_TYPES[passed_field_type] = None
             return field_value
 
         # Handle everything else including Optional types
@@ -227,11 +246,11 @@ def _evaluate_value(field_type: Any, field_value: Any, use_lazy: bool = False) -
                     if any(item is scalar for scalar in SCALAR_TYPES):
                         # Cache None for scalars
                         res = field_value
-                        _CACHED_TYPES[passed_field_type] = None
+                        __RESOLVED_TYPES[passed_field_type] = None
                     else:
                         injected_kw = _inject_lazy_load(item, field_value, use_lazy)
                         res = item(**injected_kw)
-                        _CACHED_TYPES[passed_field_type] = item
+                        __RESOLVED_TYPES[passed_field_type] = item
                     return res
                 except Exception as e:
                     pass
@@ -248,7 +267,7 @@ def _evaluate_value(field_type: Any, field_value: Any, use_lazy: bool = False) -
                 try:
                     injected_kw = _inject_lazy_load(real_type, field_value, use_lazy)
                     res = real_type(**injected_kw)
-                    _CACHED_TYPES[passed_field_type] = real_type
+                    __RESOLVED_TYPES[passed_field_type] = real_type
                     return res
                 except (SyntaxError, NameError, TypeError):
                     pass
@@ -258,15 +277,15 @@ def _evaluate_value(field_type: Any, field_value: Any, use_lazy: bool = False) -
                 if any(real_type_origin is scalar for scalar in SCALAR_TYPES):
                     # Cache None for scalars
                     res = field_value
-                    _CACHED_TYPES[passed_field_type] = None
+                    __RESOLVED_TYPES[passed_field_type] = None
                 else:
                     injected_kw = _inject_lazy_load(real_type_origin, field_value, use_lazy)
                     res = real_type_origin(**injected_kw)
-                    _CACHED_TYPES[passed_field_type] = real_type_origin
+                    __RESOLVED_TYPES[passed_field_type] = real_type_origin
                 return res
             except (SyntaxError, NameError, TypeError):
                 # Give up here. It could be enum or some other complex scalar, just leave it as is.
-                _CACHED_TYPES[passed_field_type] = None
+                __RESOLVED_TYPES[passed_field_type] = None
                 return field_value
             except BaseException:
                 raise
@@ -309,12 +328,16 @@ class _LoadableMeta(type):
     decoder functions (if any) from the field metadata before passing the arguments
     to the original ``__init__`` method.
     """
+
     def __init__(cls, *args, **kwargs):
         super().__init__(*args, **kwargs)
         cls._ensure_typing_import()
         register_model(cls)
 
-    def __call__(cls, *args, **kwargs):
+    def __call__(cls: type[Loadable], *args, **kwargs):
+        if not is_dataclass(cls):
+            raise TypeError("_LoadableMeta must be applied to dataclasses only")
+
         new_kw: Dict[str, Any] = {}
         supports_lazy = issubclass(cls, Loadable)
         lazy_requested = kwargs.get(_LOAD_LAZY_FIELD)
@@ -324,22 +347,39 @@ class _LoadableMeta(type):
             cls.__hash__ = Loadable.__hash__
             cls.__lazy_methods_patched = True
 
-        if not should_use_lazy:
+        # First, map from each field name from original_name if needed
+        all_fields = fields(cls)
+        unknown_fields = None
+        for f in all_fields:
+            if f.name in (_LOAD_LAZY_FIELD, _LOAD_TYPES_ON_INIT):
+                continue
+
+            original_f_name = f.name if _ORIGINAL_NAME_KEY not in f.metadata else f.metadata[_ORIGINAL_NAME_KEY]
+            if not f.init or original_f_name not in kwargs and f.name not in kwargs:
+                continue
+
+            new_kw[f.name] = kwargs.get(original_f_name)
+            if new_kw[f.name] is None:
+                # Use field name as a fallback
+                new_kw[f.name] = kwargs.get(f.name)
+
+            # If type loading is not requested explicitly, continue as is
             if not kwargs.get(_LOAD_TYPES_ON_INIT):
-                return super().__call__(*args, **kwargs)
+                continue
 
-            all_fields = fields(cls)
-            if not hasattr(cls, "__lazy_type_hints"):
-                cls.__lazy_type_hints = get_type_hints(cls)
+            if not should_use_lazy:
+                if not hasattr(cls, "__lazy_type_hints"):
+                    hints = get_type_hints(
+                        cls, globalns=_merged_globalns_for_hints(cls), localns=dict(vars(cls)), include_extras=True)
+                    cls.__lazy_type_hints = hints
 
-            for f in all_fields:
-                if not f.init or f.name not in kwargs:
+                if f.name in (_LOAD_LAZY_FIELD, _LOAD_TYPES_ON_INIT):
                     continue
 
                 # metadata-based decoder
                 if "decoder" in f.metadata:
                     try:
-                        kwargs[f.name] = _evaluate_field_by_meta(kwargs[f.name], f.metadata)
+                        new_kw[f.name] = _evaluate_field_by_meta(new_kw[f.name], f.metadata)
                         continue
                     except ValueError as e:
                         logging.error(
@@ -350,23 +390,31 @@ class _LoadableMeta(type):
                 field_type = cls.__lazy_type_hints.get(f.name, f.type)
                 if any(field_type is scalar for scalar in SCALAR_TYPES):
                     continue
-                kwargs[f.name] = _evaluate_value(field_type, kwargs[f.name], use_lazy=False)
+                new_kw[f.name] = _evaluate_value(field_type, new_kw[f.name], use_lazy=False)
 
-            new_kw = {
-                k: v
-                for k, v in kwargs.items()
-                if k not in (_LOAD_LAZY_FIELD, _LOAD_TYPES_ON_INIT)
-            }
-        else:
-            # Lazy path: store original kwargs as _lazy_src, set list/dict fields to None
-            for k, v in kwargs.items():
-                if k == _LOAD_TYPES_ON_INIT:
+        if should_use_lazy:
+            # Store original kwargs as _lazy_src, set list/dict fields to None
+            new_kw |= {_LAZY_SRC_FIELD: kwargs, _LOAD_LAZY_FIELD: True}
+            for k, v in new_kw.items():
+                if k in [_LOAD_TYPES_ON_INIT, _LAZY_SRC_FIELD, _LOAD_LAZY_FIELD]:
                     continue
                 new_kw[k] = v if type(v) not in [list, dict] else None
 
-            new_kw |= {_LAZY_SRC_FIELD: kwargs, _LOAD_LAZY_FIELD: True}
+        else:
+            # Preserve unknown fields otherwise
+            for k, v in kwargs.items():
+                if k not in new_kw and k not in (_LOAD_LAZY_FIELD, _LOAD_TYPES_ON_INIT):
+                    unknown_fields = new_kw.setdefault(_UNKNOWN_FIELDS_FIELD, {})
+                    unknown_fields[k] = v
 
-        return super().__call__(*args, **new_kw)
+        # Drop internals from __init__ call while preserving them
+        internals = {internal_f: new_kw.pop(internal_f, None) for internal_f in _INTERNAL_FIELDS}
+        obj = super().__call__(*args, **new_kw)
+
+        # Apply internals back on object
+        for internal_f, value in internals.items():
+            object.__setattr__(obj, internal_f, value)
+        return obj
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -374,8 +422,9 @@ class Loadable(metaclass=_LoadableMeta):
     """
     This model supports lazy loading of complex nested types avoiding unnecessary heavy recursions.
     """
-    _lazy_src: Dict = field(default_factory=dict, repr=False)
-    _lazy: bool = field(default=False, repr=False)
+    _lazy_src: Dict = field(default_factory=dict, repr=False, init=False)
+    _lazy: bool = field(default=False, repr=False, init=False)
+    _unknown_fields: dict[str, Any] = field(default_factory=dict, init=False)
 
     @classmethod
     def _ensure_typing_import(cls) -> None:
@@ -423,12 +472,17 @@ class Loadable(metaclass=_LoadableMeta):
         current_value = object.__getattribute__(self, name)
         if current_value is not None:
             return current_value
-        src_value = self._lazy_src.get(name)
+
+        f = self.__class__.__dataclass_fields__[name]
+        original_f_name = name if _ORIGINAL_NAME_KEY not in f.metadata else f.metadata[_ORIGINAL_NAME_KEY]
+        src_value = self._lazy_src.get(original_f_name)
+        if src_value is None:
+            # Use name as a fallback
+            src_value = self._lazy_src.get(name)
         if current_value == src_value:
             return current_value
 
         field_value, decoded = None, False
-        f = self.__class__.__dataclass_fields__[name]
         if "decoder" in f.metadata:
             try:
                 field_value = _evaluate_field_by_meta(src_value, f.metadata)
@@ -443,8 +497,8 @@ class Loadable(metaclass=_LoadableMeta):
             cls = self.__class__
             hints = getattr(cls, "__lazy_type_hints", None)
             if hints is None:
-                globalns = vars(sys.modules[cls.__module__])
-                hints = get_type_hints(cls, globalns=globalns, include_extras=True)
+                hints = get_type_hints(
+                    cls, globalns=_merged_globalns_for_hints(cls), localns=dict(vars(cls)), include_extras=True)
                 setattr(cls, "__lazy_type_hints", hints)
 
             field_type = hints[name]
@@ -497,7 +551,7 @@ class Loadable(metaclass=_LoadableMeta):
             public_items.append((n, _to_immutable(getattr(self, n))))
         return hash(tuple(public_items))
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self, drop_nones: bool = False) -> dict[str, Any]:
         result = {}
         for f in fields(self):
             # Skip all private fields
@@ -509,19 +563,22 @@ class Loadable(metaclass=_LoadableMeta):
                 continue
 
             value = getattr(self, f.name)
+            if value is None and drop_nones:
+                continue
             encoder = f.metadata.get('encoder')
             value = encoder(value) if encoder else value
 
             # Recursively call to_dict if the field is a dataclass instance
-            if is_dataclass(value):
-                value = value.to_dict()
+            if isinstance(value, Loadable):
+                value = value.to_dict(drop_nones)
             elif isinstance(value, list) and all(is_dataclass(item) for item in value):
-                value = [item.to_dict() for item in value]
+                value = [item.to_dict(drop_nones) for item in value]
             elif isinstance(value, dict):
                 new_value = {}
                 for k, v in value.items():
-                    new_value[k] = v.to_dict() if is_dataclass(v) else v
+                    new_value[k] = v.to_dict(drop_nones) if is_dataclass(v) else v
                 value = new_value
 
-            result[f.name] = value
+            original_f_name = f.name if _ORIGINAL_NAME_KEY not in f.metadata else f.metadata[_ORIGINAL_NAME_KEY]
+            result[original_f_name] = value
         return result
