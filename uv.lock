@@ -692,7 +692,7 @@ wheels = [
 
 [[package]]
 name = "kube-models"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "packages/kube_models" }
 
 [package.dev-dependencies]
