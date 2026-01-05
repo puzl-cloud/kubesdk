@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import sys
 import asyncio
-import threading
 from typing import Dict, List, Callable
 from pathlib import Path
 
@@ -16,7 +15,6 @@ from kubesdk_cli.k8s_dataclass_generator import (
     write_base_resource_py,
     finalize_module_init,
 )
-from kubesdk_cli.crd_generator import discover_crd_definitions, generate_crd
 
 
 def parse_headers(header_list: List[str]) -> Dict[str, str]:
@@ -66,6 +64,8 @@ def cmd_generate_models(args: argparse.Namespace) -> None:
 
 
 def cmd_generate_crd(args: argparse.Namespace) -> None:
+    from kubesdk_cli.crd_generator import discover_crd_definitions, generate_crd
+
     if not args.from_dir:
         raise SystemExit("--from-dir is required")
 
