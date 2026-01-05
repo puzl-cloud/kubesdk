@@ -328,7 +328,7 @@ from dataclasses import dataclass
 
 from kubesdk import login, watch_k8s_resources, update_k8s_resource, WatchEventType, path_, from_root_, replace_, \
     K8sAPIRequestLoggingConfig
-from kubesdk.crd import CustomK8sResourceDefinition, CustomK8sResource
+from kubesdk.crd import CustomK8sResourceDefinition, CustomK8sResource, crd_field, PrinterColumn, CRDFieldSpec
 from kube_models import Loadable
 from kube_models.api_v1.io.k8s.apimachinery.pkg.apis.meta import ObjectMeta
 from kube_models.apis_networking_k8s_io_v1.io.k8s.api.networking.v1 import Ingress
@@ -344,7 +344,8 @@ class FeatureFlagSpec(Loadable):
     rollout_percent: int = 0  # 0..100
 
     # Name of the canary Ingress (points to canary Service)
-    canary_ingress: str
+    # PrinterColumn will show this field's value in `Ingress` column in kubectl output
+    canary_ingress: str = crd_field(spec=CRDFieldSpec(printer_column=PrinterColumn(name="Ingress")))
 
 
 @dataclass(kw_only=True, frozen=True, slots=True)
