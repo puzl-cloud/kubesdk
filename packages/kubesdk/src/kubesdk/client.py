@@ -826,7 +826,7 @@ async def update_k8s_resource(
         # force overrides everything
         if force:
             method = HTTPMethod.PUT
-            content_type = "application/json"
+            content_type = PatchRequestType.plain_json
             request_data = resource.to_dict()
 
         # If we have version to compare with, find the diff between them
