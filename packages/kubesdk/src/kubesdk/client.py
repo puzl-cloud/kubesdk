@@ -215,9 +215,10 @@ async def _raw_api_request(
         "API": api_name,
         "url": url,
         "method": method,
-        "request": data if log.request_body else None,
         "content_type": headers.get("Content-Type") or headers.get("content-type")
     }
+    if log.request_body:
+        extra_log["request"] = data
     _log.debug(f"Requesting {api_name} API", extra=extra_log)
     attempt = 0
 
@@ -298,13 +299,14 @@ async def rest_api_request(
     max_attempts = min(1, processing.backoff_limit)
     error_msg = f"{log.api_name} API request failed"
     success_msg = f"{log.api_name} API request has been processed"
-    extra_log = {
+    extra_log: dict[str, Any] = {
         "API": log.api_name,
         "url": url,
         "server": _context.server,
-        "method": method,
-        "request": data if log.request_body else None
+        "method": method
     }
+    if log.request_body:
+        extra_log["request"] = data
     _log.debug(f"Requesting {log.api_name} API", extra=extra_log)
 
     response = await _raw_api_request(
@@ -325,10 +327,10 @@ async def rest_api_request(
 
         response_data = await __load_aiohttp_response(response)
         is_json = type(response_data) is not str
-        extra_log |= {
-            "status": response.status,
-            "response": response_data if log.should_log_response(response_data) else None
-        }
+        extra_log["status"] = response.status
+        if log.should_log_response(response_data):
+            extra_log["response"] = response_data
+
         if not is_json:
             _log.error(f"Received non-JSON response from {log.api_name} API", extra=extra_log)
             response_data = {"data": response_data}
@@ -376,7 +378,7 @@ async def stream_api_request(
 ) -> AsyncIterator[dict[str, Any]]:
     api_name = f"{log.api_name} stream API"
     error_msg = f"{api_name} request failed"
-    extra_log = {
+    extra_log: dict[str, Any] = {
         "API": api_name,
         "url": url,
         "server": _context.server,
@@ -406,10 +408,9 @@ async def stream_api_request(
             # Load the whole response, nothing to stream
             response_data = await __load_aiohttp_response(response)
             is_json = type(response_data) is not str
-            extra_log |= {
-                "status": response.status,
-                "response": response_data if log.should_log_response(response_data) else None
-            }
+            extra_log["status"] = response.status
+            if log.should_log_response(response_data):
+                extra_log["response"] = response_data
             if not is_json:
                 _log.error(f"Received non-JSON response from {api_name}", extra=extra_log)
                 response_data = {"data": response_data}
