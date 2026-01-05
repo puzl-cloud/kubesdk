@@ -362,7 +362,7 @@ class FeatureFlagV1Alpha1(CustomK8sResource):
 
 
 @dataclass
-class WidgetCRD(CustomK8sResourceDefinition):
+class FeatureFlagCRD(CustomK8sResourceDefinition):
     versions = [FeatureFlagV1Alpha1]
     crd_short_names_ = ["ff"]
 
