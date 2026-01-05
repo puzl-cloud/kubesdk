@@ -492,10 +492,3 @@ kubesdk generate models \
   --http-headers "Authorization: Bearer $(cat /path/to/token)" \
   --skip-tls
 ```
-
-## Near-term roadmap
-
-- [x] Publish client benchmark suite and results
-- [ ] Add contributor guide and contribution workflow
-- [ ] Ship detailed API and usage documentation
-- [ ] CRD YAML generator from your dataclasses
