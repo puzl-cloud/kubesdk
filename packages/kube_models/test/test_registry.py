@@ -70,7 +70,7 @@ class TestRegistry(unittest.TestCase):
 
         self.assertIsNone(maybe_get_model_key(NonStringDefaults))
 
-    def test_register_model_does_not_override_existing(self) -> None:
+    def test_register_model_overrides_existing(self) -> None:
         class FirstRegistered:
             apiVersion = "v1"
             kind = "ConfigMap"
@@ -81,7 +81,7 @@ class TestRegistry(unittest.TestCase):
 
         register_model(FirstRegistered)
         register_model(SecondRegistered)
-        self.assertIs(FirstRegistered, get_model("v1", "ConfigMap"))
+        self.assertIs(SecondRegistered, get_model("v1", "ConfigMap"))
 
     def test_get_model_by_body_validation(self) -> None:
         class BodyModel:
