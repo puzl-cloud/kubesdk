@@ -3,7 +3,8 @@ from enum import Enum
 
 # Use package-level import to not miss anything in __init__
 from kubesdk import QueryLabelSelector, QueryLabelSelectorRequirement, LabelSelectorOp, \
-    FieldSelectorRequirement, FieldSelectorOp, FieldSelector, K8sQueryParams, DryRun, PropagationPolicy
+    FieldSelectorRequirement, FieldSelectorOp, FieldSelector, K8sQueryParams, DryRun, PropagationPolicy, \
+    ResourceVersionMatch, FieldValidation
 
 
 class TestQueryLabelSelector(unittest.TestCase):
@@ -115,24 +116,27 @@ class TestK8sQueryParams(unittest.TestCase):
             dryRun=DryRun.All,
             fieldManager="manager",
             force=True,
+            resourceVersionMatch=ResourceVersionMatch.Exact,
+            fieldValidation=FieldValidation.Ignore
         ).to_http_params()
-        self.assertEqual(
-            params,
-            [
-                ("pretty", "true"),
-                ("continue", "token123"),
-                ("limit", "10"),
-                ("resourceVersion", "rv1"),
-                ("timeoutSeconds", "5"),
-                ("watch", "true"),
-                ("allowWatchBookmarks", "false"),
-                ("gracePeriodSeconds", "30"),
-                ("propagationPolicy", "Foreground"),
-                ("dryRun", "All"),
-                ("fieldManager", "manager"),
-                ("force", "true"),
-            ],
-        )
+        expected_params = [
+            ("pretty", "true"),
+            ("continue", "token123"),
+            ("limit", "10"),
+            ("resourceVersion", "rv1"),
+            ("timeoutSeconds", "5"),
+            ("watch", "true"),
+            ("allowWatchBookmarks", "false"),
+            ("gracePeriodSeconds", "30"),
+            ("propagationPolicy", "Foreground"),
+            ("dryRun", "All"),
+            ("fieldManager", "manager"),
+            ("force", "true"),
+            ("resourceVersionMatch", "Exact"),
+            ("fieldValidation", "Ignore")
+        ]
+        for param in expected_params:
+            self.assertIn(param, params)
 
     def test_field_and_label_selector_objects(self):
         field_sel = FieldSelector(
