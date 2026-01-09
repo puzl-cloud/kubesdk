@@ -29,4 +29,5 @@ from .errors import *
 from .client import APIRequestProcessingConfig, APIRequestLoggingConfig, DryRun, PropagationPolicy, LabelSelectorOp, \
     QueryLabelSelectorRequirement, QueryLabelSelector, FieldSelectorOp, FieldSelectorRequirement, FieldSelector, \
     K8sQueryParams, K8sAPIRequestLoggingConfig, get_k8s_resource, create_k8s_resource, update_k8s_resource, \
-    delete_k8s_resource, create_or_update_k8s_resource, WatchEventType, K8sResourceEvent, watch_k8s_resources
+    delete_k8s_resource, create_or_update_k8s_resource, WatchEventType, K8sResourceEvent, watch_k8s_resources, \
+    ResourceVersionMatch, FieldValidation
