@@ -82,6 +82,17 @@ class LabelSelectorOp(str, Enum):
     DoesNotExist = "DoesNotExist"
 
 
+class ResourceVersionMatch(str, Enum):
+    NotOlderThan = "NotOlderThan"
+    Exact = "Exact"
+
+
+class FieldValidation(str, Enum):
+    Ignore = "Ignore"
+    Warn = "Warn"
+    Strict = "Strict"
+
+
 @dataclass(kw_only=True, frozen=True)
 class QueryLabelSelectorRequirement:
     key: str
@@ -142,14 +153,23 @@ class K8sQueryParams:
     labelSelector: QueryLabelSelector | None = None
     limit: int | None = None
     resourceVersion: str | None = None
+    resourceVersionMatch: ResourceVersionMatch | None = None
     timeoutSeconds: int | None = None
+    dryRun: DryRun | None = None
+
+    # create/update/patch/apply options
+    fieldManager: str | None = None
+    fieldValidation: FieldValidation | None = None
+    force: bool | None = None
+
+    # watch
     watch: bool | None = None
     allowWatchBookmarks: bool | None = None
+    sendInitialEvents: bool | None = None
+
+    # delete options
     gracePeriodSeconds: int | None = None
     propagationPolicy: PropagationPolicy | None = None
-    dryRun: DryRun | None = None
-    fieldManager: str | None = None
-    force: bool | None = None
 
     def to_http_params(self) -> list[tuple[str, str]]:
         items = []
