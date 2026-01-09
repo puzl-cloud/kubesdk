@@ -46,7 +46,7 @@ def register_model(model_class: type[Any]) -> None:
     """Register a model class in the global registry, if it has a resolvable key."""
     model_key = maybe_get_model_key(model_class)
     if model_key is not None:
-        ALL_RESOURCES.setdefault(model_key, model_class)
+        ALL_RESOURCES[model_key] = model_class
 
 
 def get_model(api_version: str, kind: str) -> type[Any] | None:

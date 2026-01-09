@@ -28,13 +28,10 @@ _ORIGINAL_NAME_KEY = "original_name"
 
 
 def _merged_globalns_for_hints(cls: type) -> dict[str, object]:
-    ns: dict[str, object] = {}
-
     # Start with typing so ClassVar/Optional/etc are always there
-    ns.update(typing.__dict__)
+    ns: dict[str, object] = dict(vars(typing))
 
-    # Then add module globals for every class in the MRO (base -> derived)
-    # so derived overrides base on conflicts.
+    # module globals for every class in the MRO (base -> derived)
     for c in reversed(cls.__mro__):
         mod = sys.modules.get(c.__module__)
         if mod is not None:
@@ -328,10 +325,8 @@ class _LoadableMeta(type):
     decoder functions (if any) from the field metadata before passing the arguments
     to the original ``__init__`` method.
     """
-
     def __init__(cls, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        cls._ensure_typing_import()
         register_model(cls)
 
     def __call__(cls: type[Loadable], *args, **kwargs):
@@ -425,20 +420,6 @@ class Loadable(metaclass=_LoadableMeta):
     _lazy_src: Dict = field(default_factory=dict, repr=False, init=False)
     _lazy: bool = field(default=False, repr=False, init=False)
     _unknown_fields: dict[str, Any] = field(default_factory=dict, init=False)
-
-    @classmethod
-    def _ensure_typing_import(cls) -> None:
-        module = sys.modules.get(cls.__module__)
-        if not module:
-            return
-        _globals = module.__dict__
-        if _globals.get("__KUBESDK_TYPING_STAR_DONE"):
-            return
-
-        # from typing import * into class module
-        for name in getattr(typing, "__all__", ()):
-            _globals.setdefault(name, getattr(typing, name))
-        _globals["__KUBESDK_TYPING_STAR_DONE"] = True
 
     @classmethod
     def from_dict(cls, src: dict[str, Any], lazy: bool = True) -> Self:
