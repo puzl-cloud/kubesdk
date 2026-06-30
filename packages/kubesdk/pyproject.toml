@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kubesdk"
-version = "0.3.3"
+version = "0.3.4"
 description = "Fast, fully typed Kubernetes client for Python."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -28,7 +28,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "aiohttp==3.12.15",
+    "aiohttp>=3.12.15,<4",
     "PyYAML==6.0.3",
     "kube-models>=0.4.1,<1.0"
 ]
