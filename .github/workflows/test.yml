@@ -20,7 +20,7 @@ jobs:
     env:
       MAX_PARALLEL_DOWNLOAD: 10
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
 
       - name: Setup uv
         uses: ./.github/actions/setup-uv
@@ -56,7 +56,7 @@ jobs:
 
       - name: Upload coverage to Coveralls
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: coverallsapp/github-action@5cbfd81b66ca5d10c19b062c04de0199c215fb6e #v2.3.7
+        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 #v2.3.8
         with:
           github-token: '${{ secrets.GITHUB_TOKEN }}'
           path-to-lcov: 'coverage.xml'
@@ -69,7 +69,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - name: Finalize Coveralls parallel
-        uses: coverallsapp/github-action@5cbfd81b66ca5d10c19b062c04de0199c215fb6e #v2.3.7
+        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 #v2.3.8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           parallel-finished: true
